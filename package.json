@@ -1,0 +1,8 @@
+{
+  "name": "clippo-studio",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node scripts/serve.mjs", "test": "node tests/editor.test.mjs" },
+  "devDependencies": { "playwright": "^1.58.0" }
+}

@@ -1,102 +1,16 @@
 <!doctype html>
-<html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0b1020" />
-    <meta name="description" content="スマホのブラウザで使える、端末内完結のシンプル動画編集アプリ" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%237c5cff'/%3E%3Cpath d='M18 20h28v24H18z' fill='white' opacity='.22'/%3E%3Cpath d='m28 24 13 8-13 8z' fill='white'/%3E%3C/svg%3E" />
-    <title>Clippo — かんたん動画編集</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <div class="brand" aria-label="Clippo">
-          <span class="brand-mark">C</span>
-          <span>Clippo</span>
-        </div>
-        <span class="privacy-badge">端末内で処理</span>
-      </header>
-
-      <section id="emptyState" class="empty-state">
-        <div class="empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M15 10l4.6-2.3a1 1 0 0 1 1.4.9v6.8a1 1 0 0 1-1.4.9L15 14M4 6h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg>
-        </div>
-        <h1>動画を選んで、すぐ編集</h1>
-        <p>アップロードは不要。動画はこの端末の中だけで処理されます。</p>
-        <label class="primary-button file-button">
-          動画を選ぶ
-          <input id="fileInput" type="file" accept="video/*" />
-        </label>
-        <p class="format-note">MP4・MOV・WebM に対応</p>
-      </section>
-
-      <section id="editor" class="editor" hidden>
-        <div class="preview-card">
-          <video id="video" playsinline preload="metadata"></video>
-          <button id="playButton" class="play-button" type="button" aria-label="再生">
-            <svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg>
-          </button>
-          <span id="previewTime" class="preview-time">0:00 / 0:00</span>
-        </div>
-
-        <div class="timeline-card">
-          <div class="section-heading">
-            <h2>使う範囲</h2>
-            <span id="selectionLength">0:00</span>
-          </div>
-          <div class="range-wrap">
-            <div class="range-track"></div>
-            <div id="rangeFill" class="range-fill"></div>
-            <input id="startRange" type="range" min="0" max="100" value="0" step="0.01" aria-label="開始位置" />
-            <input id="endRange" type="range" min="0" max="100" value="100" step="0.01" aria-label="終了位置" />
-          </div>
-          <div class="time-row">
-            <button id="setStart" class="time-chip" type="button"><span>開始</span><strong id="startTime">0:00.0</strong></button>
-            <button id="setEnd" class="time-chip" type="button"><span>終了</span><strong id="endTime">0:00.0</strong></button>
-          </div>
-        </div>
-
-        <div class="tools-card">
-          <h2>仕上がり</h2>
-          <div class="tool-row">
-            <label for="aspect">画面サイズ</label>
-            <select id="aspect">
-              <option value="source">元のサイズ</option>
-              <option value="9:16">縦 9:16</option>
-              <option value="1:1">正方形 1:1</option>
-              <option value="16:9">横 16:9</option>
-            </select>
-          </div>
-          <div class="tool-row">
-            <label for="brightness">明るさ <span id="brightnessValue">100%</span></label>
-            <input id="brightness" type="range" min="60" max="140" value="100" />
-          </div>
-          <div class="tool-row compact">
-            <div>
-              <span class="tool-label">音声</span>
-              <small>動画の音を含める</small>
-            </div>
-            <label class="switch">
-              <input id="audioToggle" type="checkbox" checked />
-              <span></span>
-            </label>
-          </div>
-        </div>
-
-        <div id="exportStatus" class="export-status" hidden>
-          <div class="status-line"><span>動画を作成中…</span><strong id="progressText">0%</strong></div>
-          <progress id="progress" max="100" value="0"></progress>
-        </div>
-
-        <div class="actions">
-          <button id="changeVideo" class="secondary-button" type="button">別の動画</button>
-          <button id="exportButton" class="primary-button" type="button">動画を書き出す</button>
-        </div>
-      </section>
-    </main>
-    <canvas id="renderCanvas" hidden></canvas>
-    <script src="app.js"></script>
-  </body>
-</html>
+<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#171918"><meta name="description" content="スマホでも使える無料の動画編集スタジオ。動画、写真、音楽、テロップを自由に組み合わせよう。"><title>Clippo — あなたのポケットに、編集スタジオ。</title><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="styles.css"></head>
+<body>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="i-export" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 14v6h16v-6"/></symbol><symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4m10 0h4M3 15h4m10 0h4"/></symbol><symbol id="i-music" viewBox="0 0 24 24"><path d="M9 17V5l11-2v12M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="17" cy="16" rx="3" ry="3"/></symbol><symbol id="i-cut" viewBox="0 0 24 24"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="m8 8 13 13M8 16 21 3"/></symbol><symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M9 4v6m6 4v6"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></symbol><symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol><symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol><symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 9h10a6 6 0 0 1 0 12M4 9l5-5m-5 5 5 5"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+</defs></svg>
+<div class="app-shell"><header class="topbar"><a class="brand" href="./" aria-label="Clippo ホーム"><span class="brand-mark"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="m5 6 9 8-9 8M14 6l9 8-9 8"/></svg></span>clippo<span class="studio-label">STUDIO</span></a><div class="project-title"><span class="project-dot"></span><input id="projectName" value="無題のプロジェクト" aria-label="プロジェクト名" maxlength="80"><span class="local-label">この端末で編集</span></div><div class="header-actions"><button id="helpBtn" class="icon-button help-button" aria-label="使い方">?</button><button id="saveProjectBtn" class="button subtle"><svg><use href="#i-save"/></svg><span>保存</span></button><button id="exportBtn" class="button primary"><svg><use href="#i-export"/></svg>書き出す</button></div></header>
+<main class="workspace"><aside class="media-panel panel" data-panel-view="media"><div class="panel-heading"><h2>メディア</h2><span class="eyebrow">YOUR MATERIALS</span></div><button id="importBtn" class="button import-button"><svg><use href="#i-plus"/></svg>素材を追加</button><input id="mediaInput" type="file" accept="video/*,audio/*,image/*,.mov,.m4v,.mp4,.heic" multiple hidden><p class="panel-caption">動画・写真・音楽をまとめて読み込み</p><div id="mediaList" class="media-list"><div class="media-empty"><svg><use href="#i-film"/></svg><p>ここから、あなたの作品を。</p><span>素材を追加して、タイムラインに並べましょう。</span></div></div><div class="media-footer"><button id="demoBtn" class="button subtle full-width">デモで編集を試す <span aria-hidden="true">↗</span></button><button id="loadProjectBtn" class="text-button">保存したプロジェクトを開く</button><input id="projectInput" type="file" accept=".json,application/json" hidden></div></aside>
+<section class="viewer-panel" aria-label="プレビュー"><div class="viewer-heading"><span class="eyebrow">PROGRAM MONITOR</span><label class="aspect-control" for="aspect">画面比率 <select id="aspect"><option value="16:9">16:9 横</option><option value="9:16">9:16 縦</option><option value="1:1">1:1 正方形</option><option value="4:5">4:5 縦</option></select></label></div><div class="preview-stage"><canvas id="preview" width="1280" height="720" aria-label="編集中の動画プレビュー"></canvas><div id="previewEmpty" class="preview-empty"><div class="empty-frame" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="m15 10 16 10-16 10z"/></svg></div><span class="eyebrow">MAKE IT YOURS.</span><h1>その瞬間を、<br>あなたの作品に。</h1><p>並べる。切る。音を重ねる。<br>アイデアがあれば、ここが編集スタジオ。</p></div></div><div class="transport"><span class="preview-caption">プレビュー</span><button id="playBtn" class="play-button" aria-label="再生"><svg viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></svg></button><output id="timeDisplay" class="time-display">00:00.0 / 00:00.0</output></div><input id="scrub" class="scrub" type="range" min="0" max="1" value="0" step="0.01" aria-label="再生位置"></section>
+<aside class="inspector-panel panel" data-panel-view="settings"><div class="panel-heading"><h2>インスペクター</h2><svg class="muted-icon"><use href="#i-sliders"/></svg></div><div id="inspector"><div class="empty-inspector"><svg><use href="#i-sliders"/></svg><h3>細部まで、自分らしく。</h3><p>タイムラインのクリップを選ぶと、長さ・速度・音量などを調整できます。</p></div></div></aside>
+<section class="timeline-panel" aria-label="編集タイムライン"><div class="timeline-toolbar"><div class="tool-group history-tools"><button id="undoBtn" class="icon-button" aria-label="元に戻す" title="元に戻す"><svg><use href="#i-undo"/></svg></button><button id="redoBtn" class="icon-button" aria-label="やり直す" title="やり直す"><svg class="flip"><use href="#i-undo"/></svg></button></div><div class="toolbar-divider"></div><div class="tool-group"><button id="splitBtn" class="tool-button"><svg><use href="#i-cut"/></svg><span>分割</span></button><button id="duplicateBtn" class="tool-button"><svg><use href="#i-copy"/></svg><span>複製</span></button><button id="deleteBtn" class="tool-button"><svg><use href="#i-trash"/></svg><span>削除</span></button></div><div class="toolbar-divider"></div><div class="tool-group"><button id="moveLeftBtn" class="icon-button" aria-label="クリップを前へ移動"><svg><use href="#i-left"/></svg></button><button id="moveRightBtn" class="icon-button" aria-label="クリップを後ろへ移動"><svg><use href="#i-right"/></svg></button></div><div class="timeline-add-actions"><button id="addTextBtn" class="tool-button"><span class="type-icon" aria-hidden="true">T</span><span>テロップ</span></button><button id="addMusicBtn" class="tool-button"><svg><use href="#i-music"/></svg><span>音楽</span></button></div></div><div class="timeline-heading"><h2>タイムライン</h2><span>クリップを選んで編集 · ドラッグで並び替え</span></div><div id="timeline" class="timeline"></div><div class="timeline-footer"><span><span class="status-dot"></span>あなたの素材は、この端末の中に。</span><span>CREATE WITHOUT LIMITS.</span></div></section>
+<nav class="mobile-nav" aria-label="編集パネル"><button data-panel="media" class="active" aria-pressed="true"><svg><use href="#i-film"/></svg>素材</button><button data-panel="edit" aria-pressed="false"><svg><use href="#i-cut"/></svg>編集</button><button data-panel="settings" aria-pressed="false"><svg><use href="#i-sliders"/></svg>調整</button></nav></main></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="exportDialog"><div class="dialog-heading"><div><span class="eyebrow">THE FINAL CUT</span><h2>作品を、届けよう。</h2></div><button id="closeExportBtn" class="icon-button" aria-label="閉じる">×</button></div><p class="dialog-description">動画・音楽・テロップを一本の動画にまとめます。</p><div class="field-grid"><div class="field"><label for="exportQuality">解像度</label><select id="exportQuality"><option value="1080">1080p · フルHD</option><option value="720">720p · 軽いファイル</option></select></div><div class="field"><label for="exportFormat">保存形式</label><select id="exportFormat"><option value="auto">自動 · このブラウザに最適</option><option value="mp4">MP4</option><option value="webm">WebM</option></select></div></div><p class="export-note">書き出しには動画の再生時間と同程度の時間がかかります。この画面を開いたまま、端末をロックせずにお待ちください。利用できる形式はブラウザによって異なります。</p><progress id="exportProgress" max="100" value="0" aria-label="書き出しの進行状況"></progress><p id="exportMessage" role="status"></p><div id="exportResult"></div><div class="dialog-actions"><button id="cancelExportBtn" class="button subtle">キャンセル</button><button id="startExportBtn" class="button primary"><svg><use href="#i-export"/></svg>書き出しを開始</button></div></dialog>
+<dialog id="helpDialog"><div class="dialog-heading"><div><span class="eyebrow">A LITTLE GUIDANCE</span><h2>はじめての、編集スタジオ。</h2></div><button id="closeHelpBtn" class="icon-button" aria-label="閉じる">×</button></div><ol class="help-steps"><li><strong>素材を集める</strong><p>「素材を追加」で動画・写真・音楽を読み込み、素材からタイムラインへ追加します。</p></li><li><strong>ストーリーを組み立てる</strong><p>クリップを選び、再生位置で分割。前後への移動や複製、削除で順番を整えます。</p></li><li><strong>あなたらしく仕上げる</strong><p>テロップと音楽を追加。調整パネルで速度・音量・表示時間を整え、書き出しましょう。</p></li></ol><div class="help-notice"><h3>iPhoneの動画について</h3><p>MOV・MP4などを読み込めますが、再生できるコーデックは端末とブラウザに依存します。HEVCの動画が再生できない場合は、H.264のMP4に変換してください。今後の撮影はiPhoneの「設定 → カメラ → フォーマット → 互換性優先」も利用できます。</p><h3>保存と書き出しについて</h3><p>動画の書き出しはリアルタイムで行います。長い作品は処理に時間がかかります。プロジェクトを保存して、編集内容を手元に残しましょう。素材はサーバーへ送信されません。</p></div></dialog>
+<script type="module" src="app.js"></script></body></html>
