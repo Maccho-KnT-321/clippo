@@ -3,6 +3,6 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "node scripts/serve.mjs", "test": "node tests/editor.test.mjs" },
+  "scripts": { "dev": "node scripts/serve.mjs", "test": "node --test tests/timeline.test.mjs && node tests/editor.test.mjs && node tests/polish.test.mjs" },
   "devDependencies": { "playwright": "^1.58.0" }
 }

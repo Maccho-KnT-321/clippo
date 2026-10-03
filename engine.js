@@ -1,12 +1,12 @@
 // Browser-native compositor. Exports run in real time and require a visible tab.
+import { layoutClips, projectDuration as duration } from './timeline.js';
 export function supportedFormats() {
   if (!globalThis.MediaRecorder) return [];
   return ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].filter(t => MediaRecorder.isTypeSupported(t));
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number(v) || 0));
-const length = c => Math.max(0, (c.out - c.in) / (c.speed || 1));
-const duration = p => p.clips.reduce((n, c) => n + length(c), 0);
+const envelope = (elapsed, duration, fadeIn = 0, fadeOut = 0) => Math.min(1, fadeIn > 0 ? Math.max(0, elapsed / fadeIn) : 1, fadeOut > 0 ? Math.max(0, (duration - elapsed) / fadeOut) : 1);
 
 function eventReady(element, event, timeout = 12000) {
   return new Promise((resolve, reject) => {
@@ -28,6 +28,11 @@ export class EditorEngine {
       const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
       if (!Audio) throw new Error('このブラウザは音声編集に対応していません。');
       this.audioContext = new Audio(); this.streamDestination = this.audioContext.createMediaStreamDestination();
+      // Keep the recording audio clock running even for silent/photo-only projects.
+      // An idle destination can otherwise leave MP4 timestamps with missing frames.
+      this.silentClock = this.audioContext.createOscillator();
+      this.silentGain = this.audioContext.createGain(); this.silentGain.gain.value = 0;
+      this.silentClock.connect(this.silentGain).connect(this.streamDestination); this.silentClock.start();
       this.speaker = this.audioContext.createGain(); this.speaker.connect(this.audioContext.destination);
     }
     if (this.audioContext.state !== 'running') await this.audioContext.resume();
@@ -73,22 +78,27 @@ export class EditorEngine {
     const current = () => generation === this.generation;
     const retained = new Set([...project.clips.map(c => `clip:${c.id}`), ...(project.music || []).map(m => `music:${m.id}`)]);
     for (const key of this.media.keys()) if (!retained.has(key)) this.release(key);
-    let offset = 0, clip;
-    for (const c of project.clips) { if (time < offset + length(c)) { clip = c; break; } offset += length(c); }
-    if (!clip && project.clips.length) { clip = project.clips.at(-1); offset = duration(project) - length(clip); }
+    const layout = layoutClips(project.clips);
+    let visible = layout.filter(item => time >= item.start && time < item.end);
+    if (!visible.length && layout.length) visible = [time < 0 ? layout[0] : layout.at(-1)];
+    const progress = visible.length > 1 ? clamp((time - visible[1].start) / visible[0].overlap, 0, 1) : 0;
     const active = new Set();
-    if (clip) active.add(`clip:${clip.id}`);
+    for (const item of visible) active.add(`clip:${item.clip.id}`);
     for (const m of project.music || []) if (time >= m.start && time < m.start + m.out - m.in) active.add(`music:${m.id}`);
     for (const [key, entry] of this.media) if (!active.has(key)) entry.el.pause?.();
-    let visual;
-    if (clip) {
-      const key = `clip:${clip.id}`; active.add(key); visual = await this.element(clip.assetId, key);
+    const visuals = [];
+    for (const [index, item] of visible.entries()) {
+      const clip = item.clip, elapsed = clamp(time - item.start, 0, item.duration);
+      const key = `clip:${clip.id}`, visual = await this.element(clip.assetId, key);
       if (!current()) return;
+      const fade = envelope(elapsed, item.duration, clip.fadeIn, clip.fadeOut);
+      visuals.push({ visual, clip, fade });
       if (!(visual instanceof HTMLImageElement)) {
         if (visual.error) throw new Error('動画の再生中にエラーが発生しました。素材の形式をご確認ください。');
-        const sourceTime = clip.in + clamp(time - offset, 0, length(clip)) * (clip.speed || 1);
+        const sourceTime = clip.in + elapsed * clamp(clip.speed || 1, .25, 4);
         visual.playbackRate = clamp(clip.speed || 1, .25, 4);
-        const gain = this.node(visual, key); if (gain) gain.gain.value = clamp(clip.volume ?? 1, 0, 2);
+        const crossfade = visible.length > 1 ? (index === 0 ? 1 - progress : progress) : 1;
+        const gain = this.node(visual, key); if (gain) gain.gain.value = clamp(clip.volume ?? 1, 0, 2) * fade * crossfade;
         if (!this.playing || Math.abs(visual.currentTime - sourceTime) > .22) await this.seek(visual, sourceTime);
         if (!current()) return;
         if (this.playing && visual.paused) await visual.play();
@@ -114,23 +124,25 @@ export class EditorEngine {
     }
     for (const [key, entry] of this.media) if (!active.has(key)) entry.el.pause?.();
     const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
-    ctx.save(); ctx.fillStyle = '#080a0e'; ctx.fillRect(0, 0, w, h);
-    if (visual) {
-      const vw = visual.videoWidth || visual.naturalWidth, vh = visual.videoHeight || visual.naturalHeight;
-      if (!vw || !vh) { ctx.restore(); throw new Error('映像フレームを読み込めません。'); }
-      const scale = clip.fit === 'cover' ? Math.max(w / vw, h / vh) : Math.min(w / vw, h / vh);
-      const brightness = clamp(clip.brightness ?? 1, 0, 2);
-      if ('filter' in ctx) ctx.filter = `brightness(${brightness})`;
-      ctx.drawImage(visual, (w - vw * scale) / 2, (h - vh * scale) / 2, vw * scale, vh * scale);
-      if ('filter' in ctx) ctx.filter = 'none';
-      else if (brightness !== 1) {
-        ctx.globalCompositeOperation = brightness < 1 ? 'source-over' : 'screen';
-        ctx.fillStyle = brightness < 1 ? `rgba(0,0,0,${1 - brightness})` : `rgba(255,255,255,${brightness - 1})`;
-        ctx.fillRect(0, 0, w, h); ctx.globalCompositeOperation = 'source-over';
+    ctx.save();
+    try {
+    ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, w, h);
+    if (visuals.length === 1) ctx.drawImage(this.visualFrame(visuals[0], 0), 0, 0);
+    else if (visuals.length > 1) {
+      const outgoing = this.visualFrame(visuals[0], 0), incoming = this.visualFrame(visuals[1], 1);
+      const type = visible[0].clip.transition.type;
+      if (type === 'black' || type === 'white') {
+        ctx.fillStyle = type === 'white' ? '#ffffff' : '#000000'; ctx.fillRect(0, 0, w, h);
+        ctx.globalAlpha = Math.abs(progress * 2 - 1); ctx.drawImage(progress < .5 ? outgoing : incoming, 0, 0); ctx.globalAlpha = 1;
+      } else {
+        ctx.drawImage(outgoing, 0, 0);
+        if (type === 'wipe') { ctx.save(); ctx.beginPath(); ctx.rect(w * (1 - progress), 0, w * progress, h); ctx.clip(); ctx.drawImage(incoming, 0, 0); ctx.restore(); }
+        else { ctx.globalAlpha = progress; ctx.drawImage(incoming, 0, 0); ctx.globalAlpha = 1; }
       }
     }
     for (const text of project.texts || []) {
       if (time < text.start || time >= text.end || !text.text) continue;
+      ctx.globalAlpha = envelope(time - text.start, text.end - text.start, text.fadeIn ?? text.fade, text.fadeOut ?? text.fade);
       const size = clamp(text.size || 42, 12, 200) * Math.min(w, h) / 720;
       ctx.font = `700 ${size}px -apple-system, BlinkMacSystemFont, "Noto Sans JP", sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const lines = [];
@@ -138,12 +150,43 @@ export class EditorEngine {
         let line = ''; for (const char of paragraph) { if (line && ctx.measureText(line + char).width > w * .86) { lines.push(line); line = ''; } line += char; } lines.push(line);
       }
       const lineHeight = size * 1.4, block = lines.length * lineHeight;
-      const y = text.position === 'top' ? h * .12 + block / 2 : text.position === 'center' ? h / 2 : h * .86 - block / 2;
-      if (text.background) { ctx.fillStyle = 'rgba(0,0,0,.64)'; const bw = Math.min(w * .94, Math.max(...lines.map(l => ctx.measureText(l).width)) + size); ctx.fillRect((w - bw) / 2, y - block / 2 - size * .15, bw, block + size * .3); }
+      const x = text.x == null ? w / 2 : clamp(text.x, 0, 1) * w;
+      const y = text.y != null ? clamp(text.y, 0, 1) * h : text.position === 'top' ? h * .12 + block / 2 : text.position === 'center' ? h / 2 : h * .86 - block / 2;
+      if (text.background) { ctx.fillStyle = 'rgba(0,0,0,.64)'; const bw = Math.min(w * .94, Math.max(...lines.map(l => ctx.measureText(l).width)) + size); ctx.fillRect(x - bw / 2, y - block / 2 - size * .15, bw, block + size * .3); }
       ctx.fillStyle = text.color || '#ffffff'; ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = size * .15;
-      lines.forEach((line, i) => ctx.fillText(line, w / 2, y + (i - (lines.length - 1) / 2) * lineHeight)); ctx.shadowBlur = 0;
+      lines.forEach((line, i) => ctx.fillText(line, x, y + (i - (lines.length - 1) / 2) * lineHeight)); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
-    ctx.restore();
+    } finally { ctx.restore(); }
+  }
+  visualFrame({ visual, clip, fade }, index) {
+    this.layers ||= [];
+    const layer = this.layers[index] ||= document.createElement('canvas');
+    const w = this.canvas.width, h = this.canvas.height;
+    if (layer.width !== w || layer.height !== h) { layer.width = w; layer.height = h; }
+    const ctx = layer.getContext('2d');
+    const vw = visual.videoWidth || visual.naturalWidth, vh = visual.videoHeight || visual.naturalHeight;
+    if (!vw || !vh) throw new Error('映像フレームを読み込めません。');
+    ctx.save(); ctx.clearRect(0, 0, w, h);
+    const rotation = ((Number(clip.rotation) || 0) % 360 + 360) % 360, sideways = rotation === 90 || rotation === 270;
+    const rw = sideways ? vh : vw, rh = sideways ? vw : vh;
+    const scale = (clip.fit === 'cover' ? Math.max(w / rw, h / rh) : Math.min(w / rw, h / rh)) * clamp(clip.zoom ?? 1, 1, 3);
+    const brightness = clamp(clip.brightness ?? 1, 0, 2), contrast = clamp(clip.contrast ?? 1, 0, 2), saturation = clamp(clip.saturation ?? 1, 0, 2);
+    ctx.save(); ctx.translate(w / 2, h / 2); ctx.rotate(rotation * Math.PI / 180); ctx.scale(clip.flipX ? -1 : 1, 1);
+    if ('filter' in ctx) ctx.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
+    ctx.drawImage(visual, -vw * scale / 2, -vh * scale / 2, vw * scale, vh * scale); ctx.restore();
+    if (!('filter' in ctx) && (brightness !== 1 || contrast !== 1 || saturation !== 1)) {
+      // Older Safari lacks canvas filters. Apply equivalent color math to opaque pixels.
+      const pixels = ctx.getImageData(0, 0, w, h), data = pixels.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = (data[i] * brightness - 127.5) * contrast + 127.5, g = (data[i + 1] * brightness - 127.5) * contrast + 127.5, b = (data[i + 2] * brightness - 127.5) * contrast + 127.5;
+        const gray = r * .2126 + g * .7152 + b * .0722;
+        data[i] = gray + (r - gray) * saturation; data[i + 1] = gray + (g - gray) * saturation; data[i + 2] = gray + (b - gray) * saturation;
+      }
+      ctx.putImageData(pixels, 0, 0);
+    }
+    ctx.save(); ctx.globalCompositeOperation = 'destination-over'; ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, w, h); ctx.restore();
+    if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, w, h); }
+    ctx.restore(); return layer;
   }
   pause() { this.playing = false; this.generation++; cancelAnimationFrame(this.frame); for (const { el } of this.media.values()) el.pause?.(); }
   async play(project, time = 0, onTime = () => {}, onEnd = () => {}) {
@@ -209,7 +252,7 @@ export class EditorEngine {
         if (signal?.aborted) { abort(); return; }
         if (document.hidden) { visibility(); return; }
         recorder.start(250);
-        this.play(project, 0, t => onProgress(t / duration(project)), error => stop(error)).catch(stop);
+        this.play(project, 0, t => { stream.getVideoTracks()[0]?.requestFrame?.(); onProgress(t / duration(project)); }, error => stop(error)).catch(stop);
       });
       const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
       if (!blob.size) throw new Error('書き出された動画が空でした。');
@@ -228,5 +271,5 @@ export class EditorEngine {
     if (entry) { entry.el.removeAttribute('src'); entry.el.load?.(); }
     this.nodes.delete(key); this.media.delete(key);
   }
-  dispose() { this.pause(); for (const key of this.media.keys()) this.release(key); this.audioContext?.close(); }
+  dispose() { this.pause(); for (const key of this.media.keys()) this.release(key); this.silentClock?.stop(); this.silentGain?.disconnect(); this.audioContext?.close(); }
 }
