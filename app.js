@@ -1,10 +1,12 @@
-import { EditorEngine, supportedFormats } from './engine.js?v=20261004-smooth-export';
+import { EditorEngine, supportedFormats } from './engine.js?v=20261004-product-media-host';
 import { clipDuration, layoutClips, projectDuration, transitionDuration } from './timeline.js';
 import { insertionAt, trimToPlayhead } from './editing.js';
 import { musicStore, makePresetMusic } from './music-library.js';
 import { templates } from './templates.js';
 import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
 import { inspectLocalFile } from './import-media.js?v=20261004-duration';
+import { loadRecovery, saveRecovery } from './project-store.js';
+import { recoveryUI } from './recovery-ui.js';
 
 const $ = id => document.getElementById(id);
 const assets = new Map();
@@ -13,7 +15,9 @@ let selected = null, time = 0, playing = false, busy = false, exportController =
 let past = [], future = [], renderPending = false, renderAgain = false, toastTimer;
 let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUntil=0;
 let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
+let recoveryReady=false,recoveryPending=null,recoveryRevision=null,recoveryTimer,recoverySaving=false,recoveryFingerprint='',recoveryState='loading';
 const engine = new EditorEngine($('preview'), assets);
+const recoveryView=recoveryUI();
 $('projectInput').accept='.clippo,.json,application/json';
 if(/iPhone|iPad|Android/i.test(navigator.userAgent)||navigator.maxTouchPoints>1)$('exportQuality').value='720';
 $('mediaInput').accept='video/*,image/*';
@@ -48,7 +52,54 @@ function refresh() {
   $('exportBtn').disabled = !project.clips.length || busy;
   renderMedia(); renderTimeline(); renderInspector(); renderPreview();
   updateGuide();
+  scheduleRecovery();
 }
+function scheduleRecovery(){
+  if(!recoveryReady||recoveryPending||busy)return;
+  const fingerprint=JSON.stringify(project);
+  if(fingerprint===recoveryFingerprint||(!recoveryFingerprint&&!project.clips.length&&!project.music.length))return;
+  clearTimeout(recoveryTimer);recoveryState='pending';recoveryView.setState('pending','変更を自動保存します…');
+  recoveryTimer=setTimeout(flushRecovery,700);
+}
+async function flushRecovery(){
+  if(!recoveryReady||recoveryPending||recoverySaving)return;
+  if(busy){recoveryTimer=setTimeout(flushRecovery,700);return;}
+  const snapshot=clone(project),fingerprint=JSON.stringify(snapshot);if(fingerprint===recoveryFingerprint)return;
+  recoverySaving=true;recoveryState='saving';recoveryView.setState('saving','素材と編集内容をこの端末に保存中…');
+  try{const saved=await saveRecovery(snapshot,assets,recoveryRevision);recoveryRevision=saved.revision;recoveryFingerprint=fingerprint;recoveryState='saved';recoveryView.setState('saved','この端末に自動保存済み · 大切な作品は「保存」でバックアップ');}
+  catch(error){recoveryState='error';recoveryView.setState('error','自動保存できません：'+error.message);}
+  finally{recoverySaving=false;if(recoveryState==='saved')scheduleRecovery();}
+}
+async function initializeRecovery(){
+  try{
+    const saved=await loadRecovery();recoveryRevision=saved?.revision??null;
+    if(saved&&(saved.project.clips.length||saved.project.music.length)){
+      recoveryPending=saved;recoveryView.notice.hidden=false;
+      $('recoveryDescription').textContent=saved.project.name+' · '+new Date(saved.savedAt).toLocaleString('ja-JP')+' · 素材込みで復元できます';
+      recoveryView.setState('pending','前回の編集を保持中。「続きを編集」または「新しく始める」を選んでください');
+    }else{recoveryView.setState('ready','素材を追加すると、この端末に自動保存します');}
+    recoveryReady=true;scheduleRecovery();
+  }catch(error){recoveryView.setState('error','端末保存を利用できません。「保存」で手元に残してください');}
+}
+$('restoreRecoveryBtn').onclick=async()=>{
+  if(busy||!recoveryPending)return;
+  if(project.clips.length&&!confirm('現在の編集を前回の編集に置き換えます。続けますか？'))return;
+  busy=true;stop();const loaded=[];
+  try{
+    const saved=recoveryPending;if(saved.version!==1)throw new Error('保存形式に対応していません');
+    for(const [index,entry]of saved.assets.entries()){$('recoveryDescription').textContent='素材を復元中 '+(index+1)+' / '+saved.assets.length+'：'+entry.file.name;const asset=await inspectFile(entry.file);asset.id=entry.id;loaded.push(asset);}
+    const available=new Set(loaded.map(a=>a.id));if([...saved.project.clips,...saved.project.music].some(item=>!available.has(item.assetId)))throw new Error('保存された素材が不足しています');
+    remember();for(const asset of loaded)assets.set(asset.id,asset);project=clone(saved.project);selected=null;time=0;recoveryFingerprint=JSON.stringify(project);recoveryPending=null;recoveryView.notice.hidden=true;recoveryState='saved';recoveryView.setState('saved','前回の編集と素材を復元しました');toast('前回の編集の続きから再開できます');
+  }catch(error){for(const asset of loaded)URL.revokeObjectURL(asset.url);recoveryView.setState('error','復元できません：'+error.message+'。前回の保存は残しています');}
+  finally{busy=false;refresh();}
+};
+$('startFreshBtn').onclick=()=>{
+  if(busy||!recoveryPending)return;
+  if(!confirm('新しい編集を自動保存すると、前回の自動保存を置き換えます。よろしいですか？'))return;
+  recoveryPending=null;recoveryView.notice.hidden=true;recoveryFingerprint='';recoveryView.setState('ready','新しい編集をこの端末に自動保存します');scheduleRecovery();
+};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&recoveryState==='pending'){clearTimeout(recoveryTimer);flushRecovery();}});
+initializeRecovery();
 function renderMedia() {
   $('mediaList').replaceChildren();
   if(!assets.size)$('mediaList').innerHTML='<div class="media-empty"><p>ここから、あなたの作品を。</p><span>動画・写真・音楽を追加してください。</span></div>';
@@ -275,6 +326,9 @@ async function receiveMediaSelection(e){await receivePickerSelection(e.currentTa
 $('mediaInput').onchange=receiveMediaSelection;
 $('addMusicBtn').onclick = () => { $('mediaInput').accept = 'audio/*,.mp3,.m4a,.wav,.aac'; $('mediaInput').click(); setTimeout(() => $('mediaInput').accept = 'video/*,audio/*,image/*,.mov,.mp4,.m4v,.m4a', 1000); };
 $('projectName').onchange = e => edit(() => project.name = e.target.value.trim() || '名称未設定のプロジェクト');
+const renameDialog=document.createElement('dialog');renameDialog.id='renameDialog';renameDialog.innerHTML='<form method="dialog"><div class="dialog-heading"><h2>作品の名前</h2></div><label for="renameInput">あとで見つけやすい名前をつけよう</label><input id="renameInput" maxlength="80" required><div class="dialog-actions"><button value="cancel" class="button subtle" formnovalidate>キャンセル</button><button id="confirmRenameBtn" value="save" class="button primary">名前を保存</button></div></form>';document.body.append(renameDialog);
+const renameButton=document.createElement('button');renameButton.id='renameProjectBtn';renameButton.className='text-button';renameButton.textContent='作品の名前を変更';renameButton.onclick=()=>{if(busy)return;$('renameInput').value=project.name;renameDialog.showModal();};document.querySelector('.media-footer').append(renameButton);
+renameDialog.addEventListener('close',()=>{if(renameDialog.returnValue==='save')edit(()=>project.name=$('renameInput').value.trim()||'名称未設定のプロジェクト');});
 $('aspect').onchange = e => edit(() => project.aspect = e.target.value);
 $('scrub').oninput = e => { stop(); time = Number(e.target.value); updateTime(); renderPreview(); };
 $('playBtn').onclick = async () => { if (busy || !duration()) return; if (playing) { stop(); return; } if (time >= duration() - .01) time = 0; playing = true; $('playBtn').textContent = 'Ⅱ'; $('playBtn').setAttribute('aria-label','一時停止'); try { await engine.play(project,time,value => { time = value; updateTime(); },error => {stop(); if(error) toast(error.message);}); } catch(error) {stop();toast(error.message);} };
@@ -295,6 +349,7 @@ $('addTextBtn').onclick=()=>{if(!duration()){toast('先に動画または写真�
 for(const button of document.querySelectorAll('[data-panel]')) button.onclick=()=>setPanel(button.dataset.panel);
 $('helpBtn').onclick=()=>$('helpDialog').showModal();$('closeHelpBtn').onclick=()=>$('helpDialog').close();
 $('exportBtn').onclick=()=>{
+  $('exportReview')?.pause();$('exportDialog').classList.remove('export-complete');
   stop(); const formats=supportedFormats();$('exportFormat').replaceChildren();
   for(const mime of formats){const option=document.createElement('option');option.value=mime;option.textContent=mime.startsWith('video/mp4')?'MP4 · H.264':'WebM · '+(mime.includes('vp9')?'VP9':'VP8');$('exportFormat').append(option);}
   $('startExportBtn').disabled=!formats.length;$('exportMessage').textContent=formats.length?'書き出し中はこの画面を開いたままにしてください。':'このブラウザは動画書き出しに対応していません。';$('exportProgress').value=0;$('exportResult').replaceChildren();$('exportDialog').showModal();
@@ -302,6 +357,7 @@ $('exportBtn').onclick=()=>{
 $('closeExportBtn').onclick=()=>{if(!busy)$('exportDialog').close();};
 $('cancelExportBtn').onclick=()=>{exportController?.abort();if(!busy)$('exportDialog').close();};
 $('exportDialog').addEventListener('cancel',event=>{if(busy){event.preventDefault();exportController?.abort();}});
+$('exportDialog').addEventListener('close',()=>$('exportReview')?.pause());
 const exportMonitor=document.createElement('div');exportMonitor.id='exportMonitor';exportMonitor.hidden=true;exportMonitor.style.cssText='max-height:160px;overflow:hidden;margin:8px 0';$('exportProgress').before(exportMonitor);
 $('startExportBtn').onclick=async()=>{
   if(busy)return;busy=true;stop();$('startExportBtn').disabled=true;$('closeExportBtn').disabled=true;$('exportResult').replaceChildren();exportController=new AbortController();
@@ -314,7 +370,11 @@ $('startExportBtn').onclick=async()=>{
     const name=(project.name.replace(/[\\/:*?"<>|]/g,'_')||'clippo')+(blob.type.includes('mp4')?'.mp4':'.webm');
     const link=document.createElement('a');link.href=resultUrl;link.download=name;link.className='primary-button';link.textContent='動画を保存';$('exportResult').append(link);
     const file=new File([blob],name,{type:blob.type});if(navigator.canShare?.({files:[file]})){const share=document.createElement('button');share.textContent='共有・写真に保存';share.onclick=async()=>{try{await navigator.share({files:[file]});}catch(error){if(error.name!=='AbortError')toast('共有できませんでした。動画を保存してください。');}};$('exportResult').append(share);}
-    $('exportMessage').textContent='書き出しが完了しました。動画を保存してください。';
+    const review=document.createElement('video');review.id='exportReview';review.controls=true;review.playsInline=true;review.preload='metadata';review.src=resultUrl;review.setAttribute('aria-label','完成動画を再生して確認');$('exportResult').prepend(review);
+    review.onerror=()=>{$('exportMessage').textContent='完成動画をこのブラウザで再生できませんでした。保存後の再生確認が必要です。';};
+    const summary=document.createElement('p');summary.className='export-summary';summary.textContent=(blob.type.includes('mp4')?'MP4':'WebM')+' · '+fmt(duration())+' · '+(blob.size/1024/1024).toFixed(1)+' MB';$('exportResult').append(summary);
+    const back=document.createElement('button');back.className='button subtle';back.textContent='編集に戻る';back.onclick=()=>$('exportDialog').close();$('exportResult').append(back);$('exportDialog').classList.add('export-complete');
+    $('exportMessage').textContent='完成動画を再生して、動き・音・文字を確認してから保存してください。';
   }catch(error){$('exportMessage').textContent=exportController.signal.aborted?'書き出しをキャンセルしました。':'書き出しできませんでした: '+error.message;}
   finally{anchor.replaceWith(canvas);if(canvasStyle===null)canvas.removeAttribute('style');else canvas.setAttribute('style',canvasStyle);exportMonitor.hidden=true;busy=false;exportController=null;$('startExportBtn').disabled=false;$('closeExportBtn').disabled=false;refresh();}
 };
@@ -342,6 +402,9 @@ $('projectInput').onchange=async event=>{
       if(c.rotation!=null&&![0,90,180,270].includes(Number(c.rotation)))throw new Error('回転設定が不正です');c.id=uid();}
     for(const m of p.music){const a=map.get(m.assetId);if(!a||a.type!=='audio'||!validNumber(m.in,0,a.duration)||!validNumber(m.out,m.in+.001,a.duration+.1)||!validNumber(m.start,0,600000)||!validNumber(m.volume,0,2)||!validNumber(m.fadeIn,0,30)||!validNumber(m.fadeOut,0,30))throw new Error('音楽設定が不正です');m.id=uid();}
     for(const t of p.texts){if(typeof t.text!=='string'||t.text.length>10000||!validNumber(t.start,0,600000)||!validNumber(t.end,t.start+.001,600000)||!validNumber(t.size,12,160)||!/^#[0-9a-f]{6}$/i.test(t.color)||!['top','center','bottom'].includes(t.position))throw new Error('テロップ設定が不正です');for(const k of ['x','y'])if(t[k]!=null&&!validNumber(t[k],0,1))throw new Error('文字位置が不正です');if(t.fade!=null&&!validNumber(t.fade,0,3))throw new Error('文字フェードが不正です');t.id=uid();}
+    // Each imported source gets a fresh identity; an older autosave must never
+    // reuse bytes from a different imported project that happens to share IDs.
+    const remapped=new Map(loaded.map(a=>[a.id,uid()]));for(const a of loaded)a.id=remapped.get(a.id);for(const item of [...p.clips,...p.music])item.assetId=remapped.get(item.assetId);
     remember();for(const a of loaded)assets.set(a.id,a);project={version:2,name:String(p.name).slice(0,120),aspect:p.aspect,clips:p.clips,texts:p.texts,music:p.music};selected=null;time=0;toast('プロジェクトを開きました');
   }catch(error){for(const a of loaded)URL.revokeObjectURL(a.url);toast('開けませんでした: '+error.message);}
   finally{busy=false;refresh();}

@@ -3,6 +3,6 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "node scripts/serve.mjs", "test": "node --test tests/timeline.test.mjs && node tests/editor.test.mjs && node tests/polish.test.mjs && node tests/creative.test.mjs && node tests/import-layout.test.mjs && node tests/export-smooth.test.mjs" },
+  "scripts": { "dev": "node scripts/serve.mjs", "test": "node --test tests/timeline.test.mjs && node tests/editor.test.mjs && node tests/polish.test.mjs && node tests/creative.test.mjs && node tests/import-layout.test.mjs && node tests/export-smooth.test.mjs && node tests/recovery.test.mjs" },
   "devDependencies": { "playwright": "^1.58.0" }
 }

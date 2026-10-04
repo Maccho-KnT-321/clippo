@@ -61,8 +61,13 @@ try {
  await page.locator('#exportBtn').click();await page.locator('#exportQuality').selectOption('720');await page.locator('#startExportBtn').click();
  assert.equal(await page.locator('#exportMonitor #preview').count(),1,'recording canvas remains visible in the modal');
  await page.locator('#exportResult a').waitFor({timeout:40000});
+ assert.equal(await page.locator('#exportReview').count(),1,'completed file can be reviewed before saving');
+ await page.locator('#exportReview').evaluate(video=>video.play());await page.waitForFunction(()=>document.getElementById('exportReview').currentTime>.25);await page.locator('#exportReview').evaluate(video=>video.pause());
  assert.equal(await page.locator('.preview-stage #preview').count(),1,'preview canvas restored after export');
- assert.match(await page.locator('#exportMessage').innerText(),/完了/);await page.locator('#closeExportBtn').click();
+ assert.match(await page.locator('#exportMessage').innerText(),/再生.*確認/);
+ await page.setViewportSize({width:390,height:844});await page.locator('#exportReview').scrollIntoViewIfNeeded();await page.screenshot({path:'test-results/product-export-mobile.png',fullPage:true});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'completed export fits mobile width');
+ await page.setViewportSize({width:1440,height:1000});await page.locator('#closeExportBtn').click();
  await page.screenshot({path:'test-results/desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'test-results/mobile.png',fullPage:true});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile viewport has no horizontal overflow');

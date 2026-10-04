@@ -53,6 +53,7 @@ export class EditorEngine {
   async element(assetId, key) {
     const asset = this.assets.get(assetId);
     if (!asset) throw new Error('素材が見つかりません。動画を読み込み直してください。');
+    if(asset.type!=='image')this.mediaContainer();
     if (this.media.has(key)) {
       const entry = this.media.get(key);
       if (entry.assetId === assetId) { await entry.ready; return entry.el; }

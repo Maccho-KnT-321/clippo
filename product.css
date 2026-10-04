@@ -1,0 +1,17 @@
+.recovery-status{font-size:12px;line-height:1.6;color:#bac7ac;overflow-wrap:anywhere;margin:4px 0}
+.media-panel{min-height:0;overflow:auto}.media-list{min-height:80px;flex:1 1 0}.media-footer{flex-shrink:0}
+#saveProjectBtn[data-recovery=saved]{border-color:#718251}
+#saveProjectBtn[data-recovery=error]{border-color:#e1ad76;color:#ffd4a1}
+.recovery-notice{position:fixed;z-index:140;top:60px;left:50%;transform:translateX(-50%);width:min(540px,calc(100% - 24px));padding:16px;background:#293422;border:1px solid #779657;border-radius:14px;box-shadow:0 12px 50px #0008}
+.recovery-notice p{font-size:12px;line-height:1.6;margin:6px 0 12px;overflow-wrap:anywhere}
+.recovery-actions{display:flex;gap:8px;flex-wrap:wrap}
+.recovery-actions button{min-height:44px}
+#exportResult{display:flex;flex-wrap:wrap;gap:10px}
+#exportReview{width:100%;max-height:220px;background:#000;border-radius:10px}
+.export-summary{width:100%;font-size:12px;color:#bbc8ae;margin:0}
+#exportDialog.export-complete .dialog-description,#exportDialog.export-complete .field-grid,#exportDialog.export-complete .export-note,#exportDialog.export-complete #exportProgress,#exportDialog.export-complete>.dialog-actions{display:none}
+#exportDialog.export-complete #exportResult a{margin:0;min-height:44px;flex:1}
+#exportDialog.export-complete #exportResult button{min-height:44px}
+#renameInput{display:block;width:100%;min-height:48px;margin:12px 0;font-size:16px}
+@media(max-width:580px){.studio-label{display:inline;font-size:8px;letter-spacing:1px;margin:0}#exportReview{max-height:180px}.recovery-notice{padding:14px}.recovery-actions button{flex:1}}
+@media(max-width:360px){.studio-label{display:none}}
