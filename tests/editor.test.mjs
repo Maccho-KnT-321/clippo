@@ -58,7 +58,10 @@ try {
  const downloaded=page.waitForEvent('download');await page.locator('#saveProjectBtn').click();const file=await downloaded;await file.saveAs('test-results/project.clippo');
  await page.locator('#projectInput').setInputFiles('test-results/project.clippo');await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('プロジェクトを開きました'));
  assert.equal(await page.locator('.audio-clip').count(),1);assert.match(await page.locator('.text-clip').innerText(),/旅の記録/);
- await page.locator('#exportBtn').click();await page.locator('#exportQuality').selectOption('720');await page.locator('#startExportBtn').click();await page.locator('#exportResult a').waitFor({timeout:40000});
+ await page.locator('#exportBtn').click();await page.locator('#exportQuality').selectOption('720');await page.locator('#startExportBtn').click();
+ assert.equal(await page.locator('#exportMonitor #preview').count(),1,'recording canvas remains visible in the modal');
+ await page.locator('#exportResult a').waitFor({timeout:40000});
+ assert.equal(await page.locator('.preview-stage #preview').count(),1,'preview canvas restored after export');
  assert.match(await page.locator('#exportMessage').innerText(),/完了/);await page.locator('#closeExportBtn').click();
  await page.screenshot({path:'test-results/desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'test-results/mobile.png',fullPage:true});

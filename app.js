@@ -1,4 +1,4 @@
-import { EditorEngine, supportedFormats } from './engine.js';
+import { EditorEngine, supportedFormats } from './engine.js?v=20261004-smooth-export';
 import { clipDuration, layoutClips, projectDuration, transitionDuration } from './timeline.js';
 import { insertionAt, trimToPlayhead } from './editing.js';
 import { musicStore, makePresetMusic } from './music-library.js';
@@ -15,6 +15,7 @@ let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUnt
 let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
 const engine = new EditorEngine($('preview'), assets);
 $('projectInput').accept='.clippo,.json,application/json';
+if(/iPhone|iPad|Android/i.test(navigator.userAgent)||navigator.maxTouchPoints>1)$('exportQuality').value='720';
 $('mediaInput').accept='video/*,image/*';
 $('saveProjectBtn').setAttribute('aria-label','素材込みでプロジェクトを保存');
 const uid = () => crypto.randomUUID();
@@ -301,8 +302,11 @@ $('exportBtn').onclick=()=>{
 $('closeExportBtn').onclick=()=>{if(!busy)$('exportDialog').close();};
 $('cancelExportBtn').onclick=()=>{exportController?.abort();if(!busy)$('exportDialog').close();};
 $('exportDialog').addEventListener('cancel',event=>{if(busy){event.preventDefault();exportController?.abort();}});
+const exportMonitor=document.createElement('div');exportMonitor.id='exportMonitor';exportMonitor.hidden=true;exportMonitor.style.cssText='max-height:160px;overflow:hidden;margin:8px 0';$('exportProgress').before(exportMonitor);
 $('startExportBtn').onclick=async()=>{
   if(busy)return;busy=true;stop();$('startExportBtn').disabled=true;$('closeExportBtn').disabled=true;$('exportResult').replaceChildren();exportController=new AbortController();
+  // The actual recording surface must stay visible inside the modal top layer.
+  const canvas=engine.canvas,anchor=document.createComment('preview canvas'),canvasStyle=canvas.getAttribute('style');canvas.before(anchor);exportMonitor.hidden=false;exportMonitor.append(canvas);canvas.style.cssText='display:block;width:100%;max-height:160px;object-fit:contain';
   try{
     const mimeType=$('exportFormat').value;
     const blob=await engine.export(project,{height:Number($('exportQuality').value)||720,mimeType,onProgress:value=>{$('exportProgress').max=1;$('exportProgress').value=value;$('exportMessage').textContent='書き出し中 '+Math.round(value*100)+'%';},signal:exportController.signal});
@@ -312,7 +316,7 @@ $('startExportBtn').onclick=async()=>{
     const file=new File([blob],name,{type:blob.type});if(navigator.canShare?.({files:[file]})){const share=document.createElement('button');share.textContent='共有・写真に保存';share.onclick=async()=>{try{await navigator.share({files:[file]});}catch(error){if(error.name!=='AbortError')toast('共有できませんでした。動画を保存してください。');}};$('exportResult').append(share);}
     $('exportMessage').textContent='書き出しが完了しました。動画を保存してください。';
   }catch(error){$('exportMessage').textContent=exportController.signal.aborted?'書き出しをキャンセルしました。':'書き出しできませんでした: '+error.message;}
-  finally{busy=false;exportController=null;$('startExportBtn').disabled=false;$('closeExportBtn').disabled=false;refresh();}
+  finally{anchor.replaceWith(canvas);if(canvasStyle===null)canvas.removeAttribute('style');else canvas.setAttribute('style',canvasStyle);exportMonitor.hidden=true;busy=false;exportController=null;$('startExportBtn').disabled=false;$('closeExportBtn').disabled=false;refresh();}
 };
 function download(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 function dataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});}

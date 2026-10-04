@@ -23,6 +23,18 @@ export class EditorEngine {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false }); this.assets = assets;
     this.media = new Map(); this.nodes = new Map(); this.playing = false; this.generation = 0; this.renderQueue = Promise.resolve();
   }
+  mediaContainer() {
+    if (!this.mediaHost) {
+      this.mediaHost = document.createElement('div');
+      this.mediaHost.setAttribute('aria-hidden', 'true');
+      // Keep decoders in the rendered DOM, including inside the modal top layer.
+      // display:none / detached videos can fail to deliver fresh frames on iOS.
+      this.mediaHost.style.cssText = 'position:fixed;right:1px;top:1px;width:4px;height:4px;opacity:.01;pointer-events:none;overflow:hidden';
+    }
+    const parent = document.querySelector('dialog[open]') || document.body;
+    if (this.mediaHost.parentNode !== parent) parent.append(this.mediaHost);
+    return this.mediaHost;
+  }
   async audio() {
     if (!this.audioContext) {
       const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -47,7 +59,11 @@ export class EditorEngine {
       this.release(key);
     }
     const el = asset.type === 'image' ? new Image() : document.createElement(asset.type === 'audio' ? 'audio' : 'video');
-    if (asset.type !== 'image') { el.preload = 'auto'; el.playsInline = true; el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', ''); }
+    if (asset.type !== 'image') {
+      el.preload = 'auto'; el.playsInline = true; el.setAttribute('playsinline', ''); el.setAttribute('webkit-playsinline', '');
+      el.style.cssText='position:absolute;inset:0;width:4px;height:4px';
+      this.mediaContainer().append(el);
+    }
     const ready = eventReady(el, asset.type === 'image' ? 'load' : 'loadeddata');
     this.media.set(key, { el, assetId, ready }); el.src = asset.url;
     if (asset.type !== 'image') el.load();
@@ -99,7 +115,9 @@ export class EditorEngine {
         visual.playbackRate = clamp(clip.speed || 1, .25, 4);
         const crossfade = visible.length > 1 ? (index === 0 ? 1 - progress : progress) : 1;
         const gain = this.node(visual, key); if (gain) gain.gain.value = clamp(clip.volume ?? 1, 0, 2) * fade * crossfade;
-        if (!this.playing || Math.abs(visual.currentTime - sourceTime) > .22) await this.seek(visual, sourceTime);
+        // Seeking an already playing decoder every 220ms turns slow decoding
+        // into a seek/stall loop. Align at activation, then let it play normally.
+        if (!this.playing || visual.paused) await this.seek(visual, sourceTime);
         if (!current()) return;
         if (this.playing && visual.paused) await visual.play();
         if (!current()) { visual.pause(); return; }
@@ -172,7 +190,7 @@ export class EditorEngine {
     const scale = (clip.fit === 'cover' ? Math.max(w / rw, h / rh) : Math.min(w / rw, h / rh)) * clamp(clip.zoom ?? 1, 1, 3);
     const brightness = clamp(clip.brightness ?? 1, 0, 2), contrast = clamp(clip.contrast ?? 1, 0, 2), saturation = clamp(clip.saturation ?? 1, 0, 2);
     ctx.save(); ctx.translate(w / 2, h / 2); ctx.rotate(rotation * Math.PI / 180); ctx.scale(clip.flipX ? -1 : 1, 1);
-    if ('filter' in ctx) ctx.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
+    if ('filter' in ctx && (brightness !== 1 || contrast !== 1 || saturation !== 1)) ctx.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
     ctx.drawImage(visual, -vw * scale / 2, -vh * scale / 2, vw * scale, vh * scale); ctx.restore();
     if (!('filter' in ctx) && (brightness !== 1 || contrast !== 1 || saturation !== 1)) {
       // Older Safari lacks canvas filters. Apply equivalent color math to opaque pixels.
@@ -197,9 +215,12 @@ export class EditorEngine {
     await this.render(project, time);
     if (generation !== this.generation) return;
     this.playing = true;
-    const start = performance.now(), total = duration(project);
+    const start = performance.now(), total = duration(project);let lastRender=start-34;
     const tick = async () => {
       if (generation !== this.generation) return;
+      const now=performance.now();
+      if(this.exporting&&now-lastRender<1000/30-1){this.frame=requestAnimationFrame(tick);return;}
+      lastRender=now;
       const t = Math.min(total, time + (performance.now() - start) / 1000);
       try {
         if (this.audioContext.state !== 'running') throw new Error('音声処理が中断されました。画面を表示して再試行してください。');
@@ -221,6 +242,7 @@ export class EditorEngine {
     let stream, recorder, visibility, abort;
     try {
       await this.audio();
+      this.mediaContainer();
       // Let any cancelled preview seek settle before preparing export media.
       await this.renderQueue.catch(() => {});
       // Preload all timeline instances before starting the recording clock.
@@ -251,8 +273,29 @@ export class EditorEngine {
         document.addEventListener('visibilitychange', visibility); signal?.addEventListener('abort', abort, { once: true });
         if (signal?.aborted) { abort(); return; }
         if (document.hidden) { visibility(); return; }
-        recorder.start(250);
-        this.play(project, 0, t => { stream.getVideoTracks()[0]?.requestFrame?.(); onProgress(t / duration(project)); }, error => stop(error)).catch(stop);
+        let windowStart=performance.now(), renderedFrames=0;
+        const decoderSamples=new Map();
+        recorder.start(1000);
+        this.play(project, 0, t => {
+          renderedFrames++;
+          const now=performance.now();
+          if(now-windowStart>=1500){
+            const fps=renderedFrames*1000/(now-windowStart);
+            if(fps<15){stop(new Error('この端末では映像処理が追いつかず、滑らかに書き出せませんでした。720pを選び、ほかのアプリを閉じて再試行してください。'));return;}
+            windowStart=now;renderedFrames=0;
+          }
+          for(const [key,{el}]of this.media){
+            if(!(el instanceof HTMLVideoElement)||el.paused)continue;
+            const frames=el.getVideoPlaybackQuality?.().totalVideoFrames;
+            if(frames==null)continue;
+            const previous=decoderSamples.get(key);
+            if(!previous||previous.frames!==frames)decoderSamples.set(key,{frames,at:now});
+            else if(now-previous.at>1000){stop(new Error('動画のフレーム更新が止まったため書き出しを中止しました。720pで再試行するか、素材をH.264のMP4に変換してください。'));return;}
+          }
+          // captureStream(30) already samples canvas changes. Explicitly requesting
+          // every rAF adds up to 60/120fps work on high-refresh phones.
+          onProgress(t/duration(project));
+        }, error => stop(error)).catch(stop);
       });
       const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
       if (!blob.size) throw new Error('書き出された動画が空でした。');
@@ -268,8 +311,8 @@ export class EditorEngine {
     const entry = this.media.get(key), node = this.nodes.get(key);
     entry?.el.pause?.();
     node?.source.disconnect(); node?.gain.disconnect();
-    if (entry) { entry.el.removeAttribute('src'); entry.el.load?.(); }
+    if (entry) { entry.el.removeAttribute('src'); entry.el.load?.(); entry.el.remove(); }
     this.nodes.delete(key); this.media.delete(key);
   }
-  dispose() { this.pause(); for (const key of this.media.keys()) this.release(key); this.silentClock?.stop(); this.silentGain?.disconnect(); this.audioContext?.close(); }
+  dispose() { this.pause(); for (const key of this.media.keys()) this.release(key); this.mediaHost?.remove(); this.silentClock?.stop(); this.silentGain?.disconnect(); this.audioContext?.close(); }
 }
