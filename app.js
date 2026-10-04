@@ -1,5 +1,10 @@
 import { EditorEngine, supportedFormats } from './engine.js';
 import { clipDuration, layoutClips, projectDuration, transitionDuration } from './timeline.js';
+import { insertionAt, trimToPlayhead } from './editing.js';
+import { musicStore, makePresetMusic } from './music-library.js';
+import { templates } from './templates.js';
+import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
+import { inspectLocalFile } from './import-media.js';
 
 const $ = id => document.getElementById(id);
 const assets = new Map();
@@ -7,6 +12,7 @@ let project = { version: 2, name: '名称未設定のプロジェクト', aspect
 let selected = null, time = 0, playing = false, busy = false, exportController = null, resultUrl = null;
 let past = [], future = [], renderPending = false, renderAgain = false, toastTimer;
 let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUntil=0;
+let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
 const engine = new EditorEngine($('preview'), assets);
 $('projectInput').accept='.clippo,.json,application/json';
 $('mediaInput').accept='video/*,audio/*,image/*,.mov,.m4v,.mp4,.m4a';
@@ -22,7 +28,7 @@ function remember() { stop(); past.push(clone(project)); if (past.length > 60) p
 function edit(fn) { if (busy) return; remember(); fn(); time = Math.min(time, duration()); refresh(); }
 function selection() { if (!selected) return null; return project[selected.kind].find(item => item.id === selected.id); }
 function select(kind, id) { selected = { kind, id }; transitionSelection=null; renderTimeline(); renderInspector(); }
-function setPanel(name){ document.body.dataset.panel=name; for(const tab of document.querySelectorAll('[data-panel]')){tab.classList.toggle('active',tab.dataset.panel===name);tab.setAttribute('aria-pressed',String(tab.dataset.panel===name));} if(innerWidth<=580)document.querySelector(name==='edit'?'.timeline-panel':`[data-panel-view="${name}"]`)?.scrollIntoView({behavior:'smooth',block:'start'}); }
+function setPanel(name){ document.body.dataset.panel=name; for(const tab of document.querySelectorAll('[data-panel]')){tab.classList.toggle('active',tab.dataset.panel===name);tab.setAttribute('aria-pressed',String(tab.dataset.panel===name));} }
 async function renderPreview() {
   if (renderPending) { renderAgain = true; return; }
   renderPending = true;
@@ -30,6 +36,7 @@ async function renderPreview() {
   finally { renderPending = false; if (renderAgain) { renderAgain = false; renderPreview(); } }
 }
 function refresh() {
+  document.body.classList.toggle('has-clips',project.clips.length>0);
   if(!busy){const [w,h]=project.aspect.split(':').map(Number); const height=540,width=Math.round(height*w/h);if($('preview').width!==width||$('preview').height!==height){$('preview').width=width;$('preview').height=height;}}
   $('projectName').value = project.name;
   $('aspect').value = project.aspect;
@@ -39,6 +46,7 @@ function refresh() {
   $('undoBtn').disabled = !past.length || busy; $('redoBtn').disabled = !future.length || busy;
   $('exportBtn').disabled = !project.clips.length || busy;
   renderMedia(); renderTimeline(); renderInspector(); renderPreview();
+  updateGuide();
 }
 function renderMedia() {
   $('mediaList').replaceChildren();
@@ -48,17 +56,25 @@ function renderMedia() {
     button.title = asset.name + ' — タイムラインに追加';
     button.innerHTML = '<div class="media-thumb">' + (asset.thumb ? '<img alt="" src="' + asset.thumb + '">' : '<span>♫</span>') + '<span class="media-duration">' + fmt(asset.duration) + '</span></div><span>' + escape(asset.name) + '</span>';
     button.onclick = () => addAsset(asset);
+    button.querySelectorAll('img').forEach(img=>img.draggable=false);
+    const grip=document.createElement('span');grip.className='media-grip';grip.textContent='⠿';grip.title='長押ししてタイムラインへ運ぶ';grip.setAttribute('aria-hidden','true');button.append(grip);
+    button.dataset.assetId=asset.id;button.draggable=true;
+    button.setAttribute('aria-label',asset.name+' を追加。ドラッグで好きな場所にも置けます');
+    button.ondragstart=e=>{if(busy){e.preventDefault();return;}draggedAsset=asset.id;e.dataTransfer.setData('application/x-clippo-asset',asset.id);e.dataTransfer.effectAllowed='copy';button.classList.add('source-dragging');};
+    button.ondragend=()=>{draggedAsset=null;clearDrop();button.classList.remove('source-dragging');};
+    wireMediaTouch(button,asset);
     $('mediaList').append(button);
   }
 }
 function newClip(asset) { return { id: uid(), assetId: asset.id, in: 0, out: asset.type === 'image' ? 4 : asset.duration, speed: 1, volume: 1, brightness: 1, contrast:1, saturation:1, zoom:1, rotation:0, flipX:false, fadeIn:0, fadeOut:0, transition:{type:'none',duration:.5}, fit: 'contain' }; }
-function addAsset(asset) {
+function addAsset(asset,index=project.clips.length,at=time) {
   edit(() => {
-    if (asset.type === 'audio') { const item = { id: uid(), assetId: asset.id, start: time, in: 0, out: asset.duration, volume: .65, fadeIn: .2, fadeOut: .5 }; project.music.push(item); selected = { kind: 'music', id: item.id }; }
-    else { const item = newClip(asset); project.clips.push(item); selected = { kind: 'clips', id: item.id }; }
+    if (asset.type === 'audio') { const item = { id: uid(), assetId: asset.id, start: at, in: 0, out: asset.duration, volume: .65, fadeIn: .2, fadeOut: .5 }; project.music.push(item); selected = { kind: 'music', id: item.id }; }
+    else { const item = newClip(asset); project.clips.splice(index,0,item); selected = { kind: 'clips', id: item.id }; }
   });
 }
 function snapTime(value, exclude=null) {
+  if(!snapping)return Math.max(0,value);
   const points=[0,time,...layoutClips(project.clips).flatMap(c=>[c.start,c.end]),...project.texts.filter(t=>t.id!==exclude).flatMap(t=>[t.start,t.end])];
   const closest=points.reduce((best,p)=>Math.abs(p-value)<Math.abs(best-value)?p:best,Infinity);
   return Math.max(0, Math.abs(closest-value)*timelineScale<9?closest:value);
@@ -73,15 +89,20 @@ function renderTimeline() {
   ruler.onpointerdown=e=>{if(busy)return;e.preventDefault();ruler.setPointerCapture(e.pointerId);seekAt(e);ruler.onpointermove=seekAt;};
   ruler.onpointerup=ruler.onpointercancel=()=>ruler.onpointermove=null;board.append(ruler);
   for(const [kind,label] of [['clips','映像'],['texts','テロップ'],['music','音楽']]){
+    const lanes=[];
     const row=document.createElement('div');row.className='track';row.dataset.kind=kind;row.style.cssText='position:relative;height:76px;margin-bottom:8px';
     const title=document.createElement('span');title.className='track-label';title.textContent=label;title.style.cssText='position:absolute;left:-68px;top:20px';row.append(title);
     project[kind].forEach((item,index)=>{
       const entry=entries[index],start=kind==='clips'?entry.start:item.start,length=kind==='clips'?entry.duration:kind==='texts'?item.end-item.start:item.out-item.in,asset=assets.get(item.assetId);
+      let lane=0;if(kind!=='clips'){while(lanes[lane]>start)lane++;lanes[lane]=start+length;row.style.height=Math.max(76,(lane+1)*70+6)+'px';}
       const b=document.createElement('button');b.type='button';b.dataset.id=item.id;b.className='timeline-clip'+(kind==='texts'?' text-clip':kind==='music'?' audio-clip':'')+(selected?.id===item.id?' selected':'');
       b.style.cssText='position:absolute;left:'+start*scale+'px;width:'+Math.max(26,length*scale-3)+'px;height:62px;top:5px;overflow:hidden';
+      b.style.top=(5+lane*70)+'px';
       const titleText=kind==='texts'?item.text:asset?.name||'素材';
       b.innerHTML='<span class="clip-name">'+escape(titleText)+'</span><small>'+fmt(length)+(kind==='clips'?' · '+item.speed+'×':'')+'</small>';
       b.title=titleText+' — タップで選択、長押しで移動';
+      b.setAttribute('aria-pressed',String(selected?.id===item.id));
+      b.oncontextmenu=e=>{e.preventDefault();select(kind,item.id);openClipMenu(e.clientX,e.clientY);};
       if(kind==='clips'&&asset?.thumb){b.style.backgroundImage='linear-gradient(90deg,#142011b0,#14201166),url("'+asset.thumb+'")';b.style.backgroundSize='auto 100%';}
       b.onclick=e=>{e.stopPropagation();if(performance.now()<suppressClickUntil)return;select(kind,item.id);};
       wireClipMove(b,item,kind,start,row,board);
@@ -127,9 +148,11 @@ function renderTimeline() {
   board.onclick=e=>{if(busy||performance.now()<suppressClickUntil)return;stop();time=Math.max(0,Math.min(duration(),(e.clientX-board.getBoundingClientRect().left-72)/scale));updateTime();renderPreview();};
   target.append(board);target.scrollLeft=scroll;
   const has=!!selection();for(const id of ['duplicateBtn','deleteBtn','copyBtn','adjustBtn'])if($(id))$(id).disabled=!has||busy;
+  document.body.classList.toggle('has-selection',has);
   $('splitBtn').disabled=!project.clips.length||busy;$('moveLeftBtn').disabled=selected?.kind!=='clips'||busy;$('moveRightBtn').disabled=selected?.kind!=='clips'||busy;
   if($('pasteBtn'))$('pasteBtn').disabled=!clipboard||busy;if($('mergeBtn'))$('mergeBtn').disabled=selected?.kind!=='clips'||busy;
   if($('selectionName'))$('selectionName').textContent=has?(selected.kind==='texts'?selection().text:assets.get(selection().assetId)?.name):'クリップを選択して編集';
+  for(const id of ['trimStartBtn','trimEndBtn'])if($(id))$(id).disabled=selected?.kind!=='clips'||busy;
 }
 function wireClipMove(button,item,kind,start,row,board){
   button.onpointerdown=e=>{
@@ -178,7 +201,7 @@ function renderInspector() {
     if (type === 'select') for (const [value, text] of options.choices) { const option = document.createElement('option'); option.value = value; option.textContent = text; input.append(option); }
     else if (type !== 'textarea') input.type = type;
     for (const key of ['min', 'max', 'step']) if (options[key] != null) input[key] = options[key];
-    if (type === 'checkbox') input.checked = !!item[key]; else input.value = item[key] ?? options.default ?? '';
+    if (type === 'checkbox') input.checked = !!item[key]; else {const value=item[key]??options.default??'';input.value=typeof value==='number'?Number(value.toFixed(3)):value;}
     input.onchange = () => {
       const value = type === 'checkbox' ? input.checked : type === 'number' || type === 'range' ? Number(input.value) : input.value;
       if (typeof value === 'number' && (!Number.isFinite(value) || (options.min != null && value < options.min) || (options.max != null && value > options.max))) { toast('範囲内の数値を入力してください。'); renderInspector(); return; }
@@ -196,6 +219,7 @@ function renderInspector() {
     field('素材の開始（秒）', 'in', 'number', {min:0,max:max,step:.05}); field('素材の終了（秒）', 'out', 'number', {min:.05,max:max,step:.05});
     if (selected.kind === 'clips') {
       field('再生速度', 'speed', 'number', {min:.25,max:4,step:.25}); field('音量（1 = 100%）', 'volume', 'number', {min:0,max:2,step:.1});
+      quickPresets(panel,[['ゆっくり',.5],['ふつう',1],['早送り',2]],speed=>edit(()=>item.speed=speed));
       field('画面への収め方', 'fit', 'select', {choices:[['contain','全体を表示'],['cover','画面いっぱい']]});
       field('拡大','zoom','range',{min:1,max:3,step:.05,default:1});
       field('回転','rotation','select',{choices:[[0,'0°'],[90,'90°'],[180,'180°'],[270,'270°']],default:0});
@@ -214,29 +238,24 @@ function renderInspector() {
       field('フェードイン（秒）', 'fadeIn', 'number', {min:0,max:30,step:.1}); field('フェードアウト（秒）', 'fadeOut', 'number', {min:0,max:30,step:.1});
     }
   }
+  // Keep common controls visible; disclose precision controls without removing them.
+  if(selected.kind==='clips'){
+    const children=[...panel.children],start=children.findIndex(el=>el.classList.contains('inspector-section-title'));
+    if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>advancedOpen=details.open;panel.append(details);}
+  }
 }
-async function inspectFile(file) {
-  const ext = file.name.split('.').pop().toLowerCase();
-  const type = file.type.startsWith('audio/') || ['mp3','m4a','wav','aac','ogg','flac'].includes(ext) ? 'audio' : file.type.startsWith('image/') || ['jpg','jpeg','png','webp','gif'].includes(ext) ? 'image' : 'video';
-  const url = URL.createObjectURL(file), asset = {id:uid(),file,url,name:file.name,type,duration:4,width:0,height:0,thumb:null};
-  try {
-    const element = type === 'image' ? new Image() : document.createElement(type);
-    if (type !== 'image') { element.preload = 'auto'; element.muted = true; element.playsInline = true; }
-    await new Promise((resolve,reject) => { const timeout = setTimeout(() => reject(new Error('読み込みが時間内に完了しませんでした')), 20000); const cleanup = () => { clearTimeout(timeout); element.onload = null; element.onloadeddata = null; element.onerror = null; }; const ready = () => { cleanup(); resolve(); }; element.onload = ready; element.onloadeddata = ready; element.onerror = () => {cleanup();reject(new Error('このブラウザでは再生できない形式です'));}; element.src = url; });
-    if (type !== 'image') { if (!Number.isFinite(element.duration) || element.duration <= 0) throw new Error('長さを取得できませんでした'); asset.duration = element.duration; }
-    asset.width = element.videoWidth || element.naturalWidth || 0; asset.height = element.videoHeight || element.naturalHeight || 0;
-    if (type !== 'audio') { const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 144; const ctx = canvas.getContext('2d'); ctx.fillStyle = '#141821'; ctx.fillRect(0,0,256,144); const ratio = Math.min(256/asset.width,144/asset.height); ctx.drawImage(element,(256-asset.width*ratio)/2,(144-asset.height*ratio)/2,asset.width*ratio,asset.height*ratio); asset.thumb = canvas.toDataURL('image/jpeg',.75); }
-    if (type !== 'image') { element.removeAttribute('src'); element.load(); }
-    return asset;
-  } catch (error) { URL.revokeObjectURL(url); throw error; }
-}
-async function importFiles(files) {
+const inspectFile=inspectLocalFile;
+async function importFiles(files,insertion=null) {
   if (busy || !files.length) return; stop(); busy = true; toast('素材を読み込んでいます…');
   const loaded = [], errors = [];
+  $('importReport').hidden=true;
   for (const file of files) { try { loaded.push(await inspectFile(file)); } catch (error) { errors.push(file.name + ': ' + error.message); } }
+  let musicSaveFailed=false;for(const asset of loaded.filter(a=>a.type==='audio')){try{await musicStore('put',asset.file);}catch{musicSaveFailed=true;}}
   busy = false;
-  if (loaded.length) edit(() => { for (const asset of loaded) { assets.set(asset.id, asset); if (asset.type === 'audio') project.music.push({id:uid(),assetId:asset.id,start:time,in:0,out:asset.duration,volume:.65,fadeIn:.2,fadeOut:.5}); else project.clips.push(newClip(asset)); } if (project.clips.length) selected = {kind:'clips',id:project.clips.at(-1).id}; });
-  toast(errors.length ? errors.join(' / ') + '。HEVC素材は対応するSafariをお試しください。' : loaded.length + '個の素材を追加しました');
+  if (loaded.length) edit(() => { let index=insertion?.index??project.clips.length;for (const asset of loaded) { assets.set(asset.id, asset); if (asset.type === 'audio') {const item={id:uid(),assetId:asset.id,start:insertion?.time??time,in:0,out:asset.duration,volume:.65,fadeIn:.2,fadeOut:.5};project.music.push(item);selected={kind:'music',id:item.id};} else {const item=newClip(asset);project.clips.splice(index++,0,item);selected={kind:'clips',id:item.id};} } });
+  if(loaded.length){setPanel('edit');if(selected?.kind==='clips'){time=layoutClips(project.clips).find(entry=>entry.clip.id===selected.id)?.start||0;updateTime();renderPreview();}}
+  if(errors.length){$('importReportMessage').textContent=errors.join('\n');$('importReport').hidden=false;}
+  toast(errors.length ? loaded.length+'個を追加。'+errors.length+'個は読み込めませんでした。画面のエラー内容を確認してください。' : loaded.length + '個の素材を追加しました'+(musicSaveFailed?'。音楽の端末保存はできませんでした。プロジェクトを保存してください。':''));
 }
 $('importBtn').onclick = () => $('mediaInput').click(); $('mediaInput').onchange = async e => { await importFiles([...e.target.files]); e.target.value = ''; };
 $('addMusicBtn').onclick = () => { $('mediaInput').accept = 'audio/*,.mp3,.m4a,.wav,.aac'; $('mediaInput').click(); setTimeout(() => $('mediaInput').accept = 'video/*,audio/*,image/*,.mov,.mp4,.m4v,.m4a', 1000); };
@@ -370,5 +389,161 @@ document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target
  if((e.ctrlKey||e.metaKey)&&['c','v','x'].includes(e.key.toLowerCase())){e.preventDefault();if(e.key.toLowerCase()==='v')$('pasteBtn').click();else{$('copyBtn').click();if(e.key.toLowerCase()==='x')$('deleteBtn').click();}}
  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();$(e.key==='ArrowLeft'?'stepBackBtn':'stepForwardBtn').click();}
  if(e.key.toLowerCase()==='s'&&!e.ctrlKey&&!e.metaKey)$('splitBtn').click();
+ if(e.key.toLowerCase()==='q'&&!e.ctrlKey&&!e.metaKey)$('trimStartBtn').click();
+ if(e.key.toLowerCase()==='w'&&!e.ctrlKey&&!e.metaKey)$('trimEndBtn').click();
+ if(e.key==='Escape'){clearDrop();$('clipMenu').hidden=true;}
 });
+
+// A single insertion model is shared by file drops, library drags and touch drags.
+function dropPosition(clientX){
+  const board=document.querySelector('.timeline-board');
+  const at=board?Math.max(0,Math.min(duration(),(clientX-board.getBoundingClientRect().left-72)/timelineScale)):0;
+  return {time:at,index:insertionAt(project.clips,at)};
+}
+function showDrop(clientX,isAudio=false){
+  const position=dropPosition(clientX),entries=layoutClips(project.clips);
+  const board=document.querySelector('.timeline-board');if(!board)return position;
+  let line=$('insertionGuide');if(!line){line=document.createElement('div');line.id='insertionGuide';line.className='insertion-guide';board.append(line);}
+  const at=isAudio?position.time:(entries[position.index]?.start??duration());
+  line.style.left=(72+at*timelineScale)+'px';line.textContent=isAudio?'ここに音楽':'ここに追加';
+  $('timeline').classList.add('drop-ready');return position;
+}
+function clearDrop(){dropDepth=0;document.body.classList.remove('file-drag');$('insertionGuide')?.remove();$('timeline').classList.remove('drop-ready');}
+function isFileDrag(e){return [...(e.dataTransfer?.types||[])].includes('Files');}
+document.addEventListener('dragenter',e=>{if(isFileDrag(e)){e.preventDefault();dropDepth++;if(!busy)document.body.classList.add('file-drag');}});
+document.addEventListener('dragleave',e=>{if(isFileDrag(e)&&--dropDepth<=0)clearDrop();});
+document.addEventListener('dragover',e=>{
+  if(!isFileDrag(e)&&!draggedAsset)return;e.preventDefault();e.dataTransfer.dropEffect=busy?'none':'copy';
+  if(!busy&&e.target.closest('#timeline')){const rect=$('timeline').getBoundingClientRect();if(e.clientX>rect.right-30)$('timeline').scrollLeft+=12;if(e.clientX<rect.left+50)$('timeline').scrollLeft-=12;showDrop(e.clientX,assets.get(draggedAsset)?.type==='audio');}
+  else {$('insertionGuide')?.remove();$('timeline').classList.remove('drop-ready');}
+});
+document.addEventListener('drop',async e=>{
+  const files=[...(e.dataTransfer?.files||[])],asset=assets.get(draggedAsset||e.dataTransfer?.getData('application/x-clippo-asset'));
+  if(!files.length&&!asset)return;e.preventDefault();const onTimeline=!!e.target.closest('#timeline'),position=onTimeline?dropPosition(e.clientX):null;clearDrop();draggedAsset=null;
+  if(busy)return;
+  if(files.length)await importFiles(files,position);
+  else if(onTimeline){addAsset(asset,position.index,position.time);toast('この場所に追加しました。元に戻すこともできます。');}
+});
+window.addEventListener('blur',clearDrop);
+function wireMediaTouch(button,asset){
+  button.onpointerdown=e=>{
+    if(e.pointerType!=='touch'||busy)return;
+    let armed=false,ghost,position=null;
+    const timer=setTimeout(()=>{armed=true;button.setPointerCapture(e.pointerId);ghost=document.createElement('div');ghost.className='drag-ghost';ghost.textContent=asset.name;document.body.append(ghost);move(e);},350);
+    const move=ev=>{
+      if(!armed){if(Math.hypot(ev.clientX-e.clientX,ev.clientY-e.clientY)>8)clearTimeout(timer);return;}
+      ev.preventDefault();ghost.style.left=ev.clientX+'px';ghost.style.top=ev.clientY+'px';
+      if(ev.clientY<80)window.scrollBy(0,-18);else if(ev.clientY>innerHeight-100)window.scrollBy(0,18);
+      const rect=$('timeline').getBoundingClientRect();
+      position=ev.clientY>=rect.top&&ev.clientY<=rect.bottom?showDrop(ev.clientX,asset.type==='audio'):null;
+      if(!position)clearDrop();
+    };
+    const end=ev=>{clearTimeout(timer);button.removeEventListener('pointermove',move);button.removeEventListener('pointerup',end);button.removeEventListener('pointercancel',end);ghost?.remove();clearDrop();if(armed){ev.preventDefault();button.onclick=()=>{};if(position&&ev.type!=='pointercancel')addAsset(asset,position.index,position.time);else {renderMedia();toast('素材はタップでも追加できます。');}}};
+    button.addEventListener('pointermove',move);button.addEventListener('pointerup',end);button.addEventListener('pointercancel',end);
+  };
+}
+
+const guide=document.createElement('section');guide.className='workflow-guide';guide.setAttribute('aria-label','編集の3ステップ');
+guide.innerHTML='<div class="workflow-steps"><button id="guideImport"><b>1</b><span>素材を入れる</span></button><button id="guideEdit"><b>2</b><span>切って並べる</span></button><button id="guideExport"><b>3</b><span>動画にする</span></button></div><p id="guideMessage" role="status"></p>';
+document.querySelector('.topbar').after(guide);
+$('guideImport').onclick=()=>$('mediaInput').click();$('guideEdit').onclick=()=>{if(!project.clips.length){$('mediaInput').click();return;}setPanel('edit');toast('上の目盛りで場所を選び、「分割」。クリップの端を動かすと短くできます。');};$('guideExport').onclick=()=>$('exportBtn').click();
+function updateGuide(){
+  if(!$('guideMessage'))return;
+  const has=project.clips.length>0;$('guideExport').disabled=!has||busy;$('guideImport').disabled=busy;
+  $('guideMessage').textContent=busy?'素材を準備しています…':has?'失敗しても「元に戻す」で大丈夫。できたら右上の「書き出す」。':'まずは動画か写真を選ぼう。パソコンなら、この画面にファイルを落としてもOK。';
+  $('guideImport').classList.toggle('done',has);$('guideEdit').classList.toggle('current',has);
+}
+const welcome=document.createElement('div');welcome.className='welcome-actions';welcome.innerHTML='<button id="welcomeImport" class="button primary">動画・写真を選ぶ</button><button id="welcomeDemo" class="text-button">お手本で試してみる →</button>';$('previewEmpty').append(welcome);
+$('welcomeImport').onclick=()=>$('mediaInput').click();$('welcomeDemo').onclick=()=>$('demoBtn').click();
+document.querySelector('.panel-caption').textContent='タップで追加。ドラッグなら好きな場所へ。';
+document.querySelector('.inspector-panel h2').textContent='クリップの調整';
+document.querySelector('#addTextBtn span:last-child').textContent='文字を入れる';
+document.querySelector('#addMusicBtn span').textContent='音楽を入れる';
+const dropOverlay=document.createElement('div');dropOverlay.className='file-drop-overlay';dropOverlay.innerHTML='<strong>ここに素材をドロップ</strong><span>動画・写真・音楽をまとめて追加できます</span><small>タイムラインに落とすと、その場所に挿入します</small>';document.body.append(dropOverlay);
+
+const extraTools=document.createElement('div');extraTools.className='precision-tools';extraTools.innerHTML='<button id="trimStartBtn" title="再生位置より前を切り落とす（Q）">ここから使う</button><button id="trimEndBtn" title="再生位置より後を切り落とす（W）">ここまで使う</button><button id="snapBtn" aria-pressed="true" title="文字や音楽を映像の切れ目に吸着">ぴたっと合わせる ON</button><button id="moreActionsBtn" aria-label="クリップのその他の操作">その他 ⋯</button>';
+document.querySelector('.timeline-toolbar').after(extraTools);
+function trimSide(side){
+  if(busy||selected?.kind!=='clips')return;
+  const candidate=clone(project.clips);
+  if(!trimToPlayhead(candidate,selected.id,time,side)){toast('選んだクリップの途中に再生位置を合わせてください。切り替え効果の中は避けてください。');return;}
+  const start=layoutClips(project.clips).find(c=>c.clip.id===selected.id).start;
+  edit(()=>{project.clips=candidate;if(side==='start')time=start;});toast(side==='start'?'ここより前を切りました。元に戻すこともできます。':'ここより後を切りました。元に戻すこともできます。');
+}
+$('trimStartBtn').onclick=()=>trimSide('start');$('trimEndBtn').onclick=()=>trimSide('end');
+$('snapBtn').onclick=()=>{snapping=!snapping;$('snapBtn').setAttribute('aria-pressed',String(snapping));$('snapBtn').textContent='ぴたっと合わせる '+(snapping?'ON':'OFF');};
+const clipMenu=document.createElement('div');clipMenu.id='clipMenu';clipMenu.className='clip-menu';clipMenu.hidden=true;clipMenu.setAttribute('role','group');clipMenu.setAttribute('aria-label','クリップの操作');
+for(const [id,label]of [['splitBtn','ここで分割  ·  S'],['trimStartBtn','ここから使う  ·  Q'],['trimEndBtn','ここまで使う  ·  W'],['duplicateBtn','同じものをもう1つ'],['mergeBtn','分割した部分をつなぎ直す'],['copyBtn','コピー'],['pasteBtn','貼り付け'],['deleteBtn','削除']]){const b=document.createElement('button');b.dataset.action=id;b.textContent=label;b.onclick=()=>{clipMenu.hidden=true;$(id).click();};clipMenu.append(b);}document.body.append(clipMenu);
+function openClipMenu(x,y){if(busy)return;clipMenu.hidden=false;for(const b of clipMenu.children)b.disabled=$(b.dataset.action).disabled;clipMenu.style.left=Math.max(8,Math.min(x,innerWidth-240))+'px';clipMenu.style.top=Math.max(8,Math.min(y,innerHeight-clipMenu.offsetHeight-12))+'px';clipMenu.querySelector('button:not(:disabled)')?.focus();}
+$('moreActionsBtn').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();openClipMenu(r.left,r.bottom);};
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clipMenu,#moreActionsBtn'))clipMenu.hidden=true;});
+
+const editorAdd=document.createElement('button');editorAdd.id='editorImportBtn';editorAdd.className='button editor-add';editorAdd.textContent='＋ 素材追加';editorAdd.title='編集画面のまま、再生位置の近くに動画・写真・音楽を追加';document.querySelector('.timeline-toolbar').prepend(editorAdd);
+const editorInput=document.createElement('input');editorInput.id='editorMediaInput';editorInput.type='file';editorInput.multiple=true;editorInput.accept='video/*,image/*,audio/*,.mov,.mp4,.m4v,.m4a';editorInput.hidden=true;document.body.append(editorInput);
+editorAdd.onclick=()=>{if(!busy)editorInput.click();};editorInput.onchange=async e=>{const insertion={index:insertionAt(project.clips,time),time};await importFiles([...e.target.files],insertion);e.target.value='';};
+const importReport=document.createElement('div');importReport.id='importReport';importReport.className='import-report';importReport.hidden=true;importReport.setAttribute('role','alert');importReport.innerHTML='<strong>読み込めなかった素材があります</strong><p id="importReportMessage"></p><button class="text-button">閉じる</button>';importReport.querySelector('button').onclick=()=>importReport.hidden=true;document.body.append(importReport);
+const closeMedia=document.createElement('button');closeMedia.className='icon-button media-close';closeMedia.textContent='×';closeMedia.setAttribute('aria-label','素材パネルを閉じる');closeMedia.onclick=()=>setPanel('edit');document.querySelector('.media-panel .panel-heading').append(closeMedia);
+setPanel('edit');
+
+// Music stays local: built-ins, imported files and beat-maker exports share one shelf.
+let audition=null,auditionUrl=null,beatTimer=null;
+function stopAudition(){audition?.pause();audition=null;if(auditionUrl)URL.revokeObjectURL(auditionUrl);auditionUrl=null;clearInterval(beatTimer);document.querySelectorAll('.beat-cell.playing').forEach(b=>b.classList.remove('playing'));}
+async function previewMusic(file,loop=false){stopAudition();stop();auditionUrl=URL.createObjectURL(file);audition=new Audio(auditionUrl);audition.loop=loop;await audition.play();}
+function dialogShell(id,title,copy){const dialog=document.createElement('dialog');dialog.id=id;dialog.innerHTML='<div class="dialog-heading"><div><span class="eyebrow">CLIPPO CREATIVE TOOLS</span><h2>'+title+'</h2></div><button class="icon-button dialog-close" aria-label="閉じる">×</button></div><p class="dialog-description">'+copy+'</p>';dialog.querySelector('.dialog-close').onclick=()=>dialog.close();dialog.addEventListener('close',stopAudition);document.body.append(dialog);return dialog;}
+const musicDialog=dialogShell('musicDialog','音楽を選ぼう','お手本を使う、自分の音楽を入れる、リズムをつくる。どれでもOK。');
+musicDialog.insertAdjacentHTML('beforeend','<div class="music-actions"><button id="importMusicBtn" class="button">音楽を読み込む</button><button id="openBeatBtn" class="button primary">BGMをつくる</button><button id="stopMusicBtn" class="text-button">試聴を止める</button></div><h3>お手本のBGM</h3><div id="presetMusicList"></div><h3>この端末の音楽</h3><div id="savedMusicList"></div><p class="inspector-note">このブラウザ内に保存します。別の端末とは共有されません。ブラウザのデータ削除や容量不足で消える場合があるため、大切な音楽は元ファイルも保管してください。</p><input id="localMusicInput" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac" multiple hidden>');
+const presetFiles=new Map();function presetFile(style){if(!presetFiles.has(style))presetFiles.set(style,makePresetMusic(style));return presetFiles.get(style);}
+async function audioAsset(file){const existing=[...assets.values()].find(a=>a.type==='audio'&&a.file.name===file.name&&a.file.size===file.size&&a.file.lastModified===file.lastModified);if(existing)return existing;const asset=await inspectFile(file);assets.set(asset.id,asset);return asset;}
+function fillMusic(asset,total,start=0){const result=[];for(let at=start;at<total;at+=asset.duration){result.push({id:uid(),assetId:asset.id,start:at,in:0,out:Math.min(asset.duration,total-at),volume:.35,fadeIn:at===start?.15:0,fadeOut:at+asset.duration>=total?.5:0});}return result;}
+async function placeMusic(file){if(busy)return;try{const asset=await audioAsset(file);edit(()=>{const list=fillMusic(asset,duration()>time?duration():time+asset.duration,time);project.music.push(...list);selected={kind:'music',id:list[0].id};});musicDialog.close();toast('音楽を追加しました。音量や長さは「調整」で変えられます。');}catch(error){toast(error.message);}}
+function musicRow(file,key){const row=document.createElement('div');row.className='music-row';row.innerHTML='<span>'+escape(file.name.replace(/\.wav$/i,''))+'</span><button class="text-button">試聴</button><button class="button">追加</button>';
+  row.children[1].onclick=()=>previewMusic(file).catch(e=>toast(e.message));row.children[2].onclick=()=>placeMusic(file);
+  if(key){const remove=document.createElement('button');remove.className='text-button';remove.textContent='端末から削除';remove.onclick=async()=>{if(!confirm('「'+file.name+'」を端末の音楽棚から削除しますか？元ファイルや現在の編集内容は残ります。'))return;try{await musicStore('remove',{key});await refreshMusic();}catch{toast('削除できませんでした。');}};row.append(remove);}return row;
+}
+async function refreshMusic(){
+  $('presetMusicList').replaceChildren(...['bright','calm'].map(style=>musicRow(presetFile(style))));
+  try{const saved=await musicStore('list');$('savedMusicList').replaceChildren(...saved.map(track=>musicRow(track.file,track.key)));if(!saved.length)$('savedMusicList').innerHTML='<p class="shelf-empty">読み込んだ音楽と、つくったBGMがここに並びます。</p>';}
+  catch{$('savedMusicList').textContent='このブラウザでは端末保存を利用できません。音楽の読み込みはできます。';}
+}
+$('addMusicBtn').onclick=()=>{refreshMusic();musicDialog.showModal();};$('importMusicBtn').onclick=()=>$('localMusicInput').click();$('stopMusicBtn').onclick=stopAudition;
+$('localMusicInput').onchange=async e=>{const files=[...e.target.files];e.target.value='';for(const file of files){try{await audioAsset(file);try{await musicStore('put',file);}catch{toast('端末保存ができませんでした。素材一覧から今回の編集には使えます。');}}catch(error){toast(file.name+': '+error.message);}}renderMedia();refreshMusic();};
+
+const templateDialog=dialogShell('templateDialog','テンプレートでつくる','長さ・つなぎ・文字・BGMをまとめて配置。できあがった後は、自由に直せます。');
+templateDialog.insertAdjacentHTML('beforeend','<div id="templateCards" class="template-cards"></div><label class="field"><span>最初に出すタイトル</span><input id="templateTitle" maxlength="100"></label><button id="templateFilesBtn" class="button full-width">動画・写真を選ぶ</button><input id="templateFiles" type="file" accept="video/*,image/*,.mov,.mp4" multiple hidden><p id="templateSources" class="inspector-note"></p><label class="field"><span>BGM</span><select id="templateMusic"><option value="preset">テンプレートのお手本BGM</option><option value="none">音楽なし</option></select></label><p class="inspector-note">選んだ順に最大12素材を使用。各素材の冒頭をテンプレートの長さで使います。自動でベストシーンを探す機能ではありません。今の編集は置き換わりますが「元に戻す」で戻せます。</p><button id="applyTemplateBtn" class="button primary full-width">この内容で動画をつくる</button><p id="templateStatus" role="status"></p>');
+let templateChoice=templates[0],templateSaved=[];
+for(const item of templates){const b=document.createElement('button');b.className='template-card';b.dataset.template=item.id;b.innerHTML='<span class="template-art art-'+item.id+'">'+({travel:'↗',short:'▶',diary:'☀'}[item.id])+'</span><strong>'+item.name+'</strong><small>'+item.tag+'</small><p>'+item.description+'</p>';b.onclick=()=>{templateChoice=item;$('templateTitle').value=item.title;for(const card of $('templateCards').children)card.setAttribute('aria-pressed',String(card===b));};$('templateCards').append(b);}
+async function openTemplates(){
+  $('templateFiles').value='';$('templateSources').textContent='新しく素材を選ぶか、読み込み済みの映像・写真を使います。';$('templateStatus').textContent='';$('templateCards').firstChild.click();
+  $('templateMusic').innerHTML='<option value="preset">テンプレートのお手本BGM</option><option value="none">音楽なし</option>';
+  try{templateSaved=await musicStore('list');for(const [i,track]of templateSaved.entries()){const o=document.createElement('option');o.value='saved:'+i;o.textContent=track.name;$('templateMusic').append(o);}}catch{templateSaved=[];}
+  templateDialog.showModal();
+}
+$('templateFilesBtn').onclick=()=>$('templateFiles').click();$('templateFiles').onchange=e=>$('templateSources').textContent=e.target.files.length+'個の素材をセットしました（最大12個）';
+$('applyTemplateBtn').onclick=async()=>{
+  if(busy)return;const button=$('applyTemplateBtn');button.disabled=true;const loaded=[];
+  try{
+    const files=[...$('templateFiles').files].slice(0,12);
+    if(files.length)for(const file of files){const asset=await inspectFile(file);if(asset.type==='audio'){URL.revokeObjectURL(asset.url);throw new Error('ここには動画・写真を選んでください。音楽はBGM欄から選べます。');}loaded.push(asset);}
+    const sources=files.length?loaded:[...assets.values()].filter(a=>a.type!=='audio').slice(0,12);
+    if(!sources.length)throw new Error('まず「動画・写真を選ぶ」から素材をセットしてください。');
+    const mode=$('templateMusic').value,music=mode==='none'?null:await audioAsset(mode==='preset'?presetFile(templateChoice.music):templateSaved[Number(mode.split(':')[1])].file);
+    edit(()=>{for(const asset of loaded)assets.set(asset.id,asset);project.name=templateChoice.name;project.aspect=templateChoice.aspect;project.clips=sources.map(asset=>({...newClip(asset),out:Math.min(asset.type==='image'?templateChoice.seconds:asset.duration,templateChoice.seconds),fit:templateChoice.aspect==='9:16'?'cover':'contain',transition:{type:templateChoice.effect,duration:.35}}));project.texts=[];const total=duration();if($('templateTitle').value.trim())project.texts.push({id:uid(),text:$('templateTitle').value.trim(),start:0,end:Math.min(3,total),size:54,color:templateChoice.color,position:'bottom',background:true,fade:.25});project.music=music?fillMusic(music,total):[];time=0;selected={kind:'clips',id:project.clips[0].id};transitionSelection=null;});
+    templateDialog.close();$('fitTimelineBtn').click();toast('できあがり！ 再生してみよう。文字や順番はあとから変えられます。');
+  }catch(error){for(const asset of loaded)if(!assets.has(asset.id))URL.revokeObjectURL(asset.url);$('templateStatus').textContent=error.message;}finally{button.disabled=false;}
+};
+for(const parent of [document.querySelector('.media-footer'),document.querySelector('.welcome-actions')]){const b=document.createElement('button');b.className='button template-launch';b.textContent='テンプレートでつくる';b.onclick=openTemplates;parent.prepend(b);}
+
+const beatDialog=dialogShell('beatDialog','かんたんBGMづくり','光っているマスで音が鳴ります。お手本を選んで、好きな音を足したり消したりしよう。');
+beatDialog.insertAdjacentHTML('beforeend','<div class="beat-options"><label>お手本 <select id="beatPreset"><option value="pop">ポップ</option><option value="chill">ゆったり</option><option value="dance">ダンス</option></select></label><label>速さ <select id="beatTempo"><option value="90">ゆっくり</option><option value="110" selected>ふつう</option><option value="130">はやい</option></select></label></div><div id="beatGrid" class="beat-grid"></div><p class="inspector-note">4拍のリズムを8回くり返して保存します。ベースの音程はおまかせ。音の重なりは自動で抑えます。</p><div class="music-actions"><button id="playBeatBtn" class="button">▶ 聴いてみる</button><button id="stopBeatBtn" class="button">■ 止める</button><button id="saveBeatBtn" class="button primary">保存して動画に使う</button></div><label class="replace-music"><input id="replaceBeatMusic" type="checkbox" checked> 今の音楽と入れ替える（元に戻せます）</label><p id="beatStatus" role="status"></p>');
+let pattern=beatPattern('pop');
+function drawBeat(){
+  const grid=$('beatGrid');grid.replaceChildren();
+  for(const [lane,[key,name]]of beatTracks.entries()){const row=document.createElement('div');row.className='beat-row';const label=document.createElement('strong');label.textContent=name;row.append(label);const cells=document.createElement('div');cells.className='beat-cells';
+    for(let step=0;step<16;step++){const cell=document.createElement('button');cell.className='beat-cell';cell.dataset.step=step;cell.setAttribute('aria-label',name+' '+(step+1)+'番目');cell.setAttribute('aria-pressed',String(pattern[lane][step]));cell.textContent=step%4===0?String(step/4+1):'·';cell.onclick=()=>{stopAudition();pattern[lane][step]=!pattern[lane][step];cell.setAttribute('aria-pressed',String(pattern[lane][step]));};cells.append(cell);}row.append(cells);grid.append(row);}
+}
+$('openBeatBtn').onclick=()=>{musicDialog.close();drawBeat();$('beatStatus').textContent='';beatDialog.showModal();};
+$('beatPreset').onchange=e=>{stopAudition();pattern=beatPattern(e.target.value);drawBeat();};$('beatTempo').onchange=stopAudition;
+$('playBeatBtn').onclick=async()=>{try{const bpm=Number($('beatTempo').value);await previewMusic(renderBeat(pattern,bpm),true);beatTimer=setInterval(()=>{const step=Math.floor((audition?.currentTime||0)/(60/bpm/4))%16;document.querySelectorAll('.beat-cell').forEach(cell=>cell.classList.toggle('playing',Number(cell.dataset.step)===step));},50);}catch(error){$('beatStatus').textContent=error.message;}};
+$('stopBeatBtn').onclick=stopAudition;
+$('saveBeatBtn').onclick=async()=>{const button=$('saveBeatBtn');if(!pattern.some(row=>row.some(Boolean))){$('beatStatus').textContent='音がまだありません。マスを押して音を入れてみよう。';return;}button.disabled=true;try{const file=renderBeat(pattern,Number($('beatTempo').value));const asset=await audioAsset(file);let saved=true;try{await musicStore('put',file);}catch{saved=false;}edit(()=>{const music=fillMusic(asset,duration()||asset.duration);if($('replaceBeatMusic').checked)project.music=[];project.music.push(...music);selected={kind:'music',id:music[0].id};});beatDialog.close();toast(saved?'BGMを動画に追加し、この端末の音楽にも保存しました。':'動画に追加しました。端末保存はできなかったため、プロジェクトを保存してください。');}catch(error){$('beatStatus').textContent=error.message;}finally{button.disabled=false;}};
 refresh();

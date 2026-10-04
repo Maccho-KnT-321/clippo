@@ -1,0 +1,26 @@
+.editor-add{color:var(--accent);border-color:#718251;background:#303c24;white-space:nowrap}.media-close{display:none}.import-report{position:fixed;z-index:160;left:50%;top:82px;transform:translateX(-50%);width:min(520px,calc(100% - 28px));max-height:50dvh;overflow:auto;background:#34281e;border:1px solid #d9ad76;box-shadow:0 16px 60px #0009;border-radius:12px;padding:18px;color:#fff1da}.import-report p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.8;margin-top:10px}.import-report .text-button{float:right;color:#fff1da}
+@media(max-width:580px){
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+  .app-shell{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+  .topbar{height:52px;min-height:52px;padding:4px 12px;flex-shrink:0}
+  .workflow-guide{flex-shrink:0;padding:5px 10px}
+  body.has-clips .workflow-guide{display:none}
+  .workspace{display:grid!important;grid-template-columns:minmax(0,1fr);grid-template-rows:clamp(190px,32dvh,270px) minmax(0,1fr) calc(54px + env(safe-area-inset-bottom));height:auto;min-height:0;flex:1;overflow:hidden;padding-bottom:0}
+  .viewer-panel{grid-column:1;grid-row:1;height:auto;min-height:0;padding:8px 12px 4px;border-bottom:1px solid var(--line)}
+  .viewer-heading{margin-bottom:6px}.viewer-panel .preview-stage{min-height:0}.transport{min-height:40px;gap:8px}.scrub{min-height:14px;height:14px;margin:0}.viewer-panel .play-button{width:36px;height:36px}.viewer-panel .frame-button{height:36px}.preview-empty h1{font-size:18px;line-height:1.3}.welcome-actions{margin-top:6px}.welcome-actions .button{font-size:11px;min-height:34px;padding:6px}.welcome-actions .text-button{min-height:30px;padding:3px;font-size:11px}
+  .timeline-panel{grid-row:2;grid-column:1;min-height:0;overflow:hidden;border-top:0}
+  .timeline-toolbar{min-height:42px;padding:4px 8px;gap:2px!important;flex-shrink:0}
+  .timeline-toolbar #duplicateBtn,.timeline-toolbar #moveLeftBtn,.timeline-toolbar #moveRightBtn{display:none}
+  .timeline-toolbar .icon-button{width:34px;min-width:34px;height:36px}.timeline-toolbar .tool-button{padding:5px 7px!important;min-height:36px;font-size:12px}.timeline-toolbar .editor-add{font-size:12px;min-height:36px;padding:7px 9px}
+  .timeline-add-actions{margin-top:3px;padding-top:3px!important}.timeline-add-actions .tool-button{min-height:34px}
+  .precision-tools{padding:3px 8px;min-height:38px;gap:4px;flex-shrink:0}.precision-tools button{min-height:32px;padding:4px 8px}
+  .selection-bar{min-height:40px;padding:4px 10px;flex-shrink:0}.selection-actions button{min-height:32px;padding:4px 12px}.selection-name{font-size:12px}
+  .timeline-heading{padding:5px 10px;min-height:34px;flex-shrink:0;gap:8px}.timeline-heading .text-button{min-height:30px;padding:3px}.timeline-zoom{font-size:11px;gap:3px}.timeline-zoom input{width:62px}
+  .timeline-hint,.timeline-footer{display:none}
+  .timeline{min-height:0!important;overflow:auto;padding:3px 10px 10px;overscroll-behavior:contain;flex:1;-webkit-overflow-scrolling:touch}
+  .mobile-nav{grid-row:3;grid-column:1;position:static;height:auto;min-height:54px;padding:2px 6px env(safe-area-inset-bottom);display:flex!important;align-items:stretch;flex-shrink:0;z-index:20}
+  .mobile-nav button{flex:1;min-height:50px;padding:5px}
+  body[data-panel=media] .media-panel,body[data-panel=settings] .inspector-panel{position:fixed;z-index:19;top:auto;left:0;right:0;bottom:calc(54px + env(safe-area-inset-bottom));max-height:calc(100dvh - 52px - clamp(190px,32dvh,270px) - 54px - env(safe-area-inset-bottom));min-height:0;border:1px solid #60704d;border-radius:16px 16px 0 0;background:#252d21;box-shadow:0 -10px 30px #0006;padding:12px 16px;overflow:auto}
+  body[data-panel=media] .media-panel{display:flex!important}.media-panel .panel-heading{margin-bottom:10px}.media-close{display:grid}.media-panel .panel-heading .eyebrow{display:none}.media-list{min-height:80px;max-height:none;flex:1;overflow:auto}.media-footer{padding-top:8px;gap:4px}.media-footer .button{min-height:34px}.panel-caption{margin:7px 0 10px}
+  .import-report{top:60px;max-height:calc(100dvh - 130px)}
+}

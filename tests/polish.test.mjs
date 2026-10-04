@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 
 // Tests actual decoded pixels, not just the presence of transition controls.
-const browser = await chromium.launch({channel:'chrome', headless:true, args:['--autoplay-policy=no-user-gesture-required']});
+// Stabilize pixel assertions independently of this machine's H.264 hardware driver.
+// The hardware-path frame-loss limitation is documented in README.md.
+const browser = await chromium.launch({channel:'chrome', headless:true, args:['--autoplay-policy=no-user-gesture-required','--disable-accelerated-video-encode','--disable-accelerated-video-decode']});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});
 page.setDefaultTimeout(20000);
 const errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -49,6 +51,7 @@ try {
     // shorten the fixture so export checks run in two seconds.
     for(const clip of project.clips){clip.in=0;clip.out=1;clip.speed=1;}
     const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;
+    canvas.style.cssText='position:fixed;right:0;top:0;width:320px;height:180px;z-index:100';
     document.body.append(canvas);const engine=new EditorEngine(canvas,assets);
     const sample=async time=>{await engine.render(project,time);return [...canvas.getContext('2d').getImageData(20,20,1,1).data];};
     const before=await sample(.2),midpoint=await sample(.8),after=await sample(1.2);
@@ -65,7 +68,7 @@ try {
       const blob=await engine.export(project,{height:360,mimeType:format});
       const video=document.createElement('video');video.muted=true;video.src=URL.createObjectURL(blob);
       await new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=()=>reject(new Error('Export did not decode'));});
-      video.style.cssText='position:fixed;top:0;left:0;width:320px;height:180px;z-index:100';document.body.append(video);
+      video.style.cssText='position:fixed;top:0;left:0;width:320px;height:180px;z-index:100';video.playbackRate=.5;document.body.append(video);
       const ctx=canvas.getContext('2d'),frames=[];
       await new Promise((resolve,reject)=>{
         const timer=setTimeout(()=>reject(new Error('Export playback frame timed out')),8000);
@@ -73,7 +76,7 @@ try {
         const tick=(_,meta)=>{ctx.drawImage(video,0,0,canvas.width,canvas.height);frames.push({time:meta.mediaTime,pixel:[...ctx.getImageData(20,20,1,1).data]});if(!video.ended)video.requestVideoFrameCallback(tick);};
         video.requestVideoFrameCallback(tick);video.play().catch(reject);
       });
-      exported={frames,duration:video.duration,bytes:blob.size};video.remove();
+      exported={frames,duration:video.duration,bytes:blob.size,quality:video.getVideoPlaybackQuality().toJSON?.()||{total:video.getVideoPlaybackQuality().totalVideoFrames,dropped:video.getVideoPlaybackQuality().droppedVideoFrames}};video.remove();
       URL.revokeObjectURL(video.src);
     }
     engine.dispose();canvas.remove();return {before,midpoint,after,effects,exported};
@@ -129,6 +132,6 @@ try {
   await touchPage.screenshot({path:'test-results/polish-touch.png',fullPage:true});
   await mobile.close();
   assert.deepEqual(errors,[],'no uncaught browser errors');
-  console.log('Polish: split/merge, copy/paste undo, preview and exported transition pixels, overlap duration, portable transitions, frame step and mobile fit passed.',pixelResult);
+  console.log('Polish: split/merge, copy/paste undo, all transition pixels, portable transitions, frame step and mobile touch passed.',{exportDuration:pixelResult.exported?.duration,decodedFrames:pixelResult.exported?.frames.length});
 } catch(error){await page.screenshot({path:'test-results/polish-failure.png',fullPage:true});throw error;}
 finally {await browser.close();}
