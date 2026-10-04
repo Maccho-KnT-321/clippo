@@ -21,10 +21,10 @@ export async function inspectLocalFile(file){
     if(type==='image'){
       await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('画像を読み込めませんでした。JPEGまたはPNGをお試しください。')),45000);element.onload=()=>{clearTimeout(timer);resolve();};element.onerror=()=>{clearTimeout(timer);reject(new Error('この画像形式は読み込めません。JPEGまたはPNGをお試しください。'));};element.src=url;});
     }else{
-      element.preload='auto';element.muted=true;element.playsInline=true;element.setAttribute('playsinline','');element.setAttribute('webkit-playsinline','');
+      element.preload='auto';element.muted=true;element.autoplay=true;element.playsInline=true;element.setAttribute('muted','');element.setAttribute('playsinline','');element.setAttribute('webkit-playsinline','');
       // iOS may defer detached media. Keep a muted inline loader in the document.
-      element.style.cssText='position:fixed;left:-2px;top:-2px;width:1px;height:1px;opacity:0;pointer-events:none';element.setAttribute('aria-hidden','true');document.body.append(element);
-      const metadata=waitMedia(element,()=>element.readyState>=1,['loadedmetadata','durationchange']);element.src=url;element.load();await metadata;
+      element.style.cssText='position:fixed;right:0;top:52px;width:2px;height:2px;opacity:.01;pointer-events:none';element.setAttribute('aria-hidden','true');document.body.append(element);
+      const metadata=waitMedia(element,()=>element.readyState>=1,['loadedmetadata','durationchange']);element.src=url;element.load();element.play().catch(()=>{});await metadata;
       if(!Number.isFinite(element.duration)){
         // Some browser-recorded WebM files omit duration until seeking near EOF.
         const durationReady=waitMedia(element,()=>Number.isFinite(element.duration)&&element.duration>0,['durationchange','timeupdate','seeked']);element.currentTime=1e10;await durationReady;element.currentTime=0;

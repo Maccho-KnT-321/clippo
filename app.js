@@ -15,7 +15,7 @@ let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUnt
 let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
 const engine = new EditorEngine($('preview'), assets);
 $('projectInput').accept='.clippo,.json,application/json';
-$('mediaInput').accept='video/*,audio/*,image/*,.mov,.m4v,.mp4,.m4a';
+$('mediaInput').accept='video/*,image/*';
 $('saveProjectBtn').setAttribute('aria-label','素材込みでプロジェクトを保存');
 const uid = () => crypto.randomUUID();
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -257,17 +257,21 @@ function renderInspector() {
 const inspectFile=inspectLocalFile;
 async function importFiles(files,insertion=null) {
   if (busy || !files.length) return; stop(); busy = true; toast('素材を読み込んでいます…');
+  $('importActivity').hidden=false;$('importActivityMessage').textContent='選択を受け取りました。'+files.length+'個の素材を登録しています…';$('importActivityProgress').value=0;$('importActivityProgress').max=files.length;
   const loaded = [], errors = [];
   $('importReport').hidden=true;
-  for (const file of files) { try { loaded.push(await inspectFile(file)); } catch (error) { errors.push(file.name + ': ' + error.message); } }
+  for (const [index,file] of files.entries()) { $('importActivityMessage').textContent=(index+1)+' / '+files.length+' を登録中：'+file.name;try { loaded.push(await inspectFile(file)); } catch (error) { errors.push(file.name + ': ' + error.message); }$('importActivityProgress').value=index+1; }
   let musicSaveFailed=false;for(const asset of loaded.filter(a=>a.type==='audio')){try{await musicStore('put',asset.file);}catch{musicSaveFailed=true;}}
   busy = false;
+  $('importActivity').hidden=true;
   if (loaded.length) edit(() => { let index=insertion?.index??project.clips.length;for (const asset of loaded) { assets.set(asset.id, asset); if (asset.type === 'audio') {const item={id:uid(),assetId:asset.id,start:insertion?.time??time,in:0,out:asset.duration,volume:.65,fadeIn:.2,fadeOut:.5};project.music.push(item);selected={kind:'music',id:item.id};} else {const item=newClip(asset);project.clips.splice(index++,0,item);selected={kind:'clips',id:item.id};} } });
   if(loaded.length){setPanel('edit');if(selected?.kind==='clips'){time=layoutClips(project.clips).find(entry=>entry.clip.id===selected.id)?.start||0;updateTime();renderPreview();}}
   if(errors.length){$('importReportMessage').textContent=errors.join('\n');$('importReport').hidden=false;}
   toast(errors.length ? loaded.length+'個を追加。'+errors.length+'個は読み込めませんでした。画面のエラー内容を確認してください。' : loaded.length + '個の素材を追加しました'+(musicSaveFailed?'。音楽の端末保存はできませんでした。プロジェクトを保存してください。':''));
 }
-$('importBtn').onclick = () => $('mediaInput').click(); $('mediaInput').onchange = async e => { await importFiles([...e.target.files]); e.target.value = ''; };
+$('importBtn').onclick = () => $('mediaInput').click();
+async function receiveMediaSelection(e){const input=e.currentTarget,files=[...input.files];if(!files.length)return;input.value='';await importFiles(files);}
+$('mediaInput').oninput=$('mediaInput').onchange=receiveMediaSelection;
 $('addMusicBtn').onclick = () => { $('mediaInput').accept = 'audio/*,.mp3,.m4a,.wav,.aac'; $('mediaInput').click(); setTimeout(() => $('mediaInput').accept = 'video/*,audio/*,image/*,.mov,.mp4,.m4v,.m4a', 1000); };
 $('projectName').onchange = e => edit(() => project.name = e.target.value.trim() || '名称未設定のプロジェクト');
 $('aspect').onchange = e => edit(() => project.aspect = e.target.value);
@@ -489,10 +493,13 @@ $('moreActionsBtn').onclick=e=>{const r=e.currentTarget.getBoundingClientRect();
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clipMenu,#moreActionsBtn'))clipMenu.hidden=true;});
 
 const editorAdd=document.createElement('button');editorAdd.id='editorImportBtn';editorAdd.className='button editor-add';editorAdd.textContent='＋ 素材追加';editorAdd.title='編集画面のまま、再生位置の近くに動画・写真・音楽を追加';document.querySelector('.timeline-toolbar').prepend(editorAdd);
-const editorInput=document.createElement('input');editorInput.id='editorMediaInput';editorInput.type='file';editorInput.multiple=true;editorInput.accept='video/*,image/*,audio/*,.mov,.mp4,.m4v,.m4a';editorInput.hidden=true;document.body.append(editorInput);
+const editorInput=document.createElement('input');editorInput.id='editorMediaInput';editorInput.type='file';editorInput.multiple=true;editorInput.accept='video/*,image/*';editorInput.hidden=true;document.body.append(editorInput);
 let editorInsertion=null;
 function openEditorPicker(insertion={index:insertionAt(project.clips,time),time}){if(busy)return;editorInsertion=insertion;editorInput.click();}
-editorAdd.onclick=()=>openEditorPicker();editorInput.onchange=async e=>{const insertion=editorInsertion||{index:insertionAt(project.clips,time),time};editorInsertion=null;await importFiles([...e.target.files],insertion);e.target.value='';};editorInput.oncancel=()=>editorInsertion=null;
+editorAdd.onclick=()=>openEditorPicker();
+async function receiveEditorSelection(e){const files=[...e.currentTarget.files];if(!files.length)return;e.currentTarget.value='';const insertion=editorInsertion||{index:insertionAt(project.clips,time),time};editorInsertion=null;await importFiles(files,insertion);}
+editorInput.oninput=editorInput.onchange=receiveEditorSelection;editorInput.oncancel=()=>editorInsertion=null;
+const importActivity=document.createElement('div');importActivity.id='importActivity';importActivity.className='import-activity';importActivity.hidden=true;importActivity.setAttribute('role','status');importActivity.innerHTML='<span id="importActivityMessage"></span><progress id="importActivityProgress" value="0" max="1"></progress>';document.querySelector('.viewer-heading').after(importActivity);
 const importReport=document.createElement('div');importReport.id='importReport';importReport.className='import-report';importReport.hidden=true;importReport.setAttribute('role','alert');importReport.innerHTML='<strong>読み込めなかった素材があります</strong><p id="importReportMessage"></p><button class="text-button">閉じる</button>';importReport.querySelector('button').onclick=()=>importReport.hidden=true;document.body.append(importReport);
 const closeMedia=document.createElement('button');closeMedia.className='icon-button media-close';closeMedia.textContent='×';closeMedia.setAttribute('aria-label','素材パネルを閉じる');closeMedia.onclick=()=>setPanel('edit');document.querySelector('.media-panel .panel-heading').append(closeMedia);
 setPanel('edit');

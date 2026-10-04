@@ -18,6 +18,10 @@ try{
   });
   await page.locator('#editorMediaInput').setInputFiles({name:'recorded.webm',mimeType:'video/webm',buffer:Buffer.from(file)});
   await page.locator('.timeline-clip').first().waitFor({timeout:50000});
+  assert.equal(await page.locator('.timeline-clip').count(),1,'input and change events register only once');
+  await page.locator('#editorMediaInput').setInputFiles({name:'recorded-again.MOV',mimeType:'video/webm',buffer:Buffer.from(file)});
+  await page.locator('.timeline-clip').nth(1).waitFor({timeout:50000});
+  assert.equal(await page.locator('.timeline-clip').count(),2,'confirming another selection immediately registers it');
   assert.equal(await page.locator('#importReport').isVisible(),false);
   assert.equal(await page.locator('body').getAttribute('data-panel'),'edit','import stays in editor');
   const chooser=page.waitForEvent('filechooser');await page.locator('#editorImportBtn').tap();assert((await chooser).isMultiple());
