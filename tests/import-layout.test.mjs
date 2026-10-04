@@ -1,6 +1,6 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
-const browser=await chromium.launch({channel:'chrome',headless:true,args:['--autoplay-policy=no-user-gesture-required']});
+const browser=await chromium.launch({channel:'chrome',headless:true,args:['--autoplay-policy=no-user-gesture-required','--disable-accelerated-video-encode','--disable-accelerated-video-decode']});
 const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{
@@ -25,6 +25,17 @@ try{
   assert.equal(await page.locator('#importReport').isVisible(),false);
   assert.equal(await page.locator('body').getAttribute('data-panel'),'edit','import stays in editor');
   const chooser=page.waitForEvent('filechooser');await page.locator('#editorImportBtn').tap();assert((await chooser).isMultiple());
+  await page.locator('#editorFilesImportBtn').tap();
+  assert.match(await page.locator('#filesImportDialog').innerText(),/ファイルに保存/);
+  const filesChooser=page.waitForEvent('filechooser');await page.locator('#chooseFilesMediaBtn').tap();
+  const fallback=await filesChooser;assert(fallback.isMultiple());
+  assert.equal(await fallback.element().getAttribute('accept'),'application/octet-stream');
+  await fallback.setFiles({name:'from-files.MOV',mimeType:'video/webm',buffer:Buffer.from(file)});
+  await page.locator('.timeline-clip').nth(2).waitFor({timeout:50000});
+  assert.equal(await page.locator('.timeline-clip').count(),3,'Files fallback automatically adds to editor');
+  await page.locator('#filesMediaInput').setInputFiles({name:'from-files.MOV',mimeType:'video/webm',buffer:Buffer.from(file)});
+  await page.locator('.timeline-clip').nth(3).waitFor({timeout:50000});
+  assert.equal(await page.locator('.timeline-clip').count(),4,'same file can be selected again after processing');
   for(const height of [844,667]){
     await page.setViewportSize({width:390,height});
     const check=await page.evaluate(()=>{const p=document.querySelector('.viewer-panel').getBoundingClientRect(),t=document.getElementById('timeline').getBoundingClientRect();return {previewTop:p.top,previewBottom:p.bottom,timelineTop:t.top,timelineBottom:t.bottom,timelineHeight:t.height,pageHeight:document.documentElement.scrollHeight,viewport:innerHeight};});

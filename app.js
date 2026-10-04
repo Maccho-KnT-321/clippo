@@ -4,7 +4,7 @@ import { insertionAt, trimToPlayhead } from './editing.js';
 import { musicStore, makePresetMusic } from './music-library.js';
 import { templates } from './templates.js';
 import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
-import { inspectLocalFile } from './import-media.js';
+import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 
 const $ = id => document.getElementById(id);
 const assets = new Map();
@@ -270,8 +270,8 @@ async function importFiles(files,insertion=null) {
   toast(errors.length ? loaded.length+'個を追加。'+errors.length+'個は読み込めませんでした。画面のエラー内容を確認してください。' : loaded.length + '個の素材を追加しました'+(musicSaveFailed?'。音楽の端末保存はできませんでした。プロジェクトを保存してください。':''));
 }
 $('importBtn').onclick = () => $('mediaInput').click();
-async function receiveMediaSelection(e){const input=e.currentTarget,files=[...input.files];if(!files.length)return;input.value='';await importFiles(files);}
-$('mediaInput').oninput=$('mediaInput').onchange=receiveMediaSelection;
+async function receiveMediaSelection(e){await receivePickerSelection(e.currentTarget);}
+$('mediaInput').onchange=receiveMediaSelection;
 $('addMusicBtn').onclick = () => { $('mediaInput').accept = 'audio/*,.mp3,.m4a,.wav,.aac'; $('mediaInput').click(); setTimeout(() => $('mediaInput').accept = 'video/*,audio/*,image/*,.mov,.mp4,.m4v,.m4a', 1000); };
 $('projectName').onchange = e => edit(() => project.name = e.target.value.trim() || '名称未設定のプロジェクト');
 $('aspect').onchange = e => edit(() => project.aspect = e.target.value);
@@ -495,10 +495,32 @@ document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clipMenu,#mor
 const editorAdd=document.createElement('button');editorAdd.id='editorImportBtn';editorAdd.className='button editor-add';editorAdd.textContent='＋ 素材追加';editorAdd.title='編集画面のまま、再生位置の近くに動画・写真・音楽を追加';document.querySelector('.timeline-toolbar').prepend(editorAdd);
 const editorInput=document.createElement('input');editorInput.id='editorMediaInput';editorInput.type='file';editorInput.multiple=true;editorInput.accept='video/*,image/*';editorInput.hidden=true;document.body.append(editorInput);
 let editorInsertion=null;
-function openEditorPicker(insertion={index:insertionAt(project.clips,time),time}){if(busy)return;editorInsertion=insertion;editorInput.click();}
+function openEditorPicker(insertion={index:insertionAt(project.clips,time),time}){if(busy)return;editorInsertion=insertion;editorInput.value='';editorInput.click();}
 editorAdd.onclick=()=>openEditorPicker();
-async function receiveEditorSelection(e){const files=[...e.currentTarget.files];if(!files.length)return;e.currentTarget.value='';const insertion=editorInsertion||{index:insertionAt(project.clips,time),time};editorInsertion=null;await importFiles(files,insertion);}
-editorInput.oninput=editorInput.onchange=receiveEditorSelection;editorInput.oncancel=()=>editorInsertion=null;
+async function receiveEditorSelection(e){const insertion=editorInsertion||{index:insertionAt(project.clips,time),time};editorInsertion=null;await receivePickerSelection(e.currentTarget,insertion);}
+editorInput.onchange=receiveEditorSelection;editorInput.oncancel=()=>editorInsertion=null;
+// Do not clear the native selection during its input event. Let the sheet finish
+// its change event before starting media decoding and DOM updates.
+const receivingPickers=new WeakSet();
+async function receivePickerSelection(input,insertion=null){
+  const files=[...input.files];if(!files.length||receivingPickers.has(input)||busy)return;
+  receivingPickers.add(input);
+  try{await new Promise(resolve=>setTimeout(resolve,0));await importFiles(files,insertion);}
+  finally{input.value='';receivingPickers.delete(input);}
+}
+// public.data accepts movie/image descendants without invoking Photos' own
+// preparation pipeline in WebKit. Keep media validation in the app.
+const filesInput=document.createElement('input');filesInput.id='filesMediaInput';filesInput.type='file';filesInput.multiple=true;filesInput.accept='application/octet-stream';filesInput.hidden=true;document.body.append(filesInput);
+let filesInsertion=null;
+filesInput.onchange=e=>{const insertion=filesInsertion;filesInsertion=null;return receivePickerSelection(e.currentTarget,insertion);};
+filesInput.oncancel=()=>filesInsertion=null;
+const filesHelp=document.createElement('dialog');filesHelp.id='filesImportDialog';filesHelp.innerHTML='<div class="dialog-heading"><h2>ファイルから追加</h2><button class="icon-button" aria-label="閉じる">×</button></div><p>写真の選択画面で✓を押しても戻らないときは、こちらをお試しください。</p><ol><li>iPhoneの「写真」で動画を開く</li><li>共有ボタン →「ファイルに保存」→「このiPhone内」に保存</li><li>下のボタンで保存したMOV・MP4を選ぶ</li></ol><p>選択を確定すると、自動で編集画面に追加します。再生できる形式は端末によって異なります。</p><button id="chooseFilesMediaBtn" class="button primary full-width">保存したファイルを選ぶ</button>';document.body.append(filesHelp);
+filesHelp.querySelector('.icon-button').onclick=()=>filesHelp.close();
+$('chooseFilesMediaBtn').onclick=()=>{filesHelp.close();filesInput.value='';filesInput.click();};
+function showFilesImport(insertion){if(busy)return;filesInsertion=insertion;filesHelp.showModal();}
+for(const [parent,id,inEditor]of [[document.querySelector('.timeline-toolbar'),'editorFilesImportBtn',true],[document.querySelector('.media-panel .panel-caption'),'filesImportBtn',false]]){
+  const button=document.createElement('button');button.id=id;button.className='button subtle';button.textContent='ファイルから追加';button.onclick=()=>showFilesImport(inEditor?{index:insertionAt(project.clips,time),time}:null);if(inEditor)parent.insertBefore(button,editorAdd.nextSibling);else parent.before(button);
+}
 const importActivity=document.createElement('div');importActivity.id='importActivity';importActivity.className='import-activity';importActivity.hidden=true;importActivity.setAttribute('role','status');importActivity.innerHTML='<span id="importActivityMessage"></span><progress id="importActivityProgress" value="0" max="1"></progress>';document.querySelector('.viewer-heading').after(importActivity);
 const importReport=document.createElement('div');importReport.id='importReport';importReport.className='import-report';importReport.hidden=true;importReport.setAttribute('role','alert');importReport.innerHTML='<strong>読み込めなかった素材があります</strong><p id="importReportMessage"></p><button class="text-button">閉じる</button>';importReport.querySelector('button').onclick=()=>importReport.hidden=true;document.body.append(importReport);
 const closeMedia=document.createElement('button');closeMedia.className='icon-button media-close';closeMedia.textContent='×';closeMedia.setAttribute('aria-label','素材パネルを閉じる');closeMedia.onclick=()=>setPanel('edit');document.querySelector('.media-panel .panel-heading').append(closeMedia);

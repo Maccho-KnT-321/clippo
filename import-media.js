@@ -29,7 +29,7 @@ export async function inspectLocalFile(file){
         // Some browser-recorded WebM files omit duration until seeking near EOF.
         const durationReady=waitMedia(element,()=>Number.isFinite(element.duration)&&element.duration>0,['durationchange','timeupdate','seeked']);element.currentTime=1e10;await durationReady;element.currentTime=0;
       }
-      if(element.duration<=0)throw new Error('再生時間を取得できませんでした。別の動画でお試しください。');
+      if(!Number.isFinite(element.duration)||element.duration<=0||element.duration>86400)throw new Error('正しい再生時間を取得できませんでした（素材は24時間以内に対応）。別の動画、またはMP4に変換した動画でお試しください。');
       asset.duration=element.duration;
       if(element.readyState<2){const frame=waitMedia(element,()=>element.readyState>=2,['loadeddata','canplay','seeked']);element.play().catch(()=>{});await frame;}
       element.pause();
