@@ -24,3 +24,4 @@
   body[data-panel=media] .media-panel{display:flex!important}.media-panel .panel-heading{margin-bottom:10px}.media-close{display:grid}.media-panel .panel-heading .eyebrow{display:none}.media-list{min-height:80px;max-height:none;flex:1;overflow:auto}.media-footer{padding-top:8px;gap:4px}.media-footer .button{min-height:34px}.panel-caption{margin:7px 0 10px}
   .import-report{top:60px;max-height:calc(100dvh - 130px)}
 }
+.track.click-to-add{cursor:copy}.track.click-to-add:hover{background:#d1f47706}.empty-track-add{pointer-events:auto;cursor:pointer;border:1px dashed #657551;border-radius:8px;background:#283421;color:#c7dcb2;min-height:44px;margin:8px 4px;padding:10px 15px;font-size:12px}.empty-track-add:hover{background:#3a4b2c;border-color:var(--accent)}

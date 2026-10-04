@@ -141,7 +141,17 @@ function renderTimeline() {
         transition.onclick=activate;transition.onpointerup=e=>{if(e.pointerType==='touch'){e.preventDefault();activate(e);}};row.append(transition);
       }
     });
-    if(!project[kind].length){const hint=document.createElement('span');hint.className='empty-track-hint';hint.textContent=kind==='clips'?'素材を追加すると、隙間なくつながります':kind==='texts'?'T テロップを追加':'♫ 音楽を追加';row.append(hint);}
+    const addAt=e=>{
+      if(busy||performance.now()<suppressClickUntil)return;
+      e.stopPropagation();stop();
+      const at=e.detail===0?time:Math.max(0,Math.min(duration(),(e.clientX-row.getBoundingClientRect().left)/scale));
+      time=at;updateTime();renderPreview();
+      if(kind==='clips')openEditorPicker({index:insertionAt(project.clips,at),time:at});
+      else $(kind==='texts'?'addTextBtn':'addMusicBtn').click();
+    };
+    row.onclick=e=>{if(e.target.closest('.timeline-clip,.transition-button,.track-label'))return;addAt(e);};
+    row.classList.add('click-to-add');
+    if(!project[kind].length){const hint=document.createElement('button');hint.type='button';hint.className='empty-track-hint empty-track-add';hint.textContent=kind==='clips'?'＋ 動画・写真を追加':kind==='texts'?'＋ 文字を入れる':'＋ 音楽を入れる';hint.onclick=addAt;row.append(hint);}
     board.append(row);
   }
   const head=document.createElement('div');head.className='playhead';head.style.cssText='position:absolute;pointer-events:none;top:0;bottom:0;width:2px;left:'+(72+time*scale)+'px';board.append(head);
@@ -480,7 +490,9 @@ document.addEventListener('pointerdown',e=>{if(!e.target.closest('#clipMenu,#mor
 
 const editorAdd=document.createElement('button');editorAdd.id='editorImportBtn';editorAdd.className='button editor-add';editorAdd.textContent='＋ 素材追加';editorAdd.title='編集画面のまま、再生位置の近くに動画・写真・音楽を追加';document.querySelector('.timeline-toolbar').prepend(editorAdd);
 const editorInput=document.createElement('input');editorInput.id='editorMediaInput';editorInput.type='file';editorInput.multiple=true;editorInput.accept='video/*,image/*,audio/*,.mov,.mp4,.m4v,.m4a';editorInput.hidden=true;document.body.append(editorInput);
-editorAdd.onclick=()=>{if(!busy)editorInput.click();};editorInput.onchange=async e=>{const insertion={index:insertionAt(project.clips,time),time};await importFiles([...e.target.files],insertion);e.target.value='';};
+let editorInsertion=null;
+function openEditorPicker(insertion={index:insertionAt(project.clips,time),time}){if(busy)return;editorInsertion=insertion;editorInput.click();}
+editorAdd.onclick=()=>openEditorPicker();editorInput.onchange=async e=>{const insertion=editorInsertion||{index:insertionAt(project.clips,time),time};editorInsertion=null;await importFiles([...e.target.files],insertion);e.target.value='';};editorInput.oncancel=()=>editorInsertion=null;
 const importReport=document.createElement('div');importReport.id='importReport';importReport.className='import-report';importReport.hidden=true;importReport.setAttribute('role','alert');importReport.innerHTML='<strong>読み込めなかった素材があります</strong><p id="importReportMessage"></p><button class="text-button">閉じる</button>';importReport.querySelector('button').onclick=()=>importReport.hidden=true;document.body.append(importReport);
 const closeMedia=document.createElement('button');closeMedia.className='icon-button media-close';closeMedia.textContent='×';closeMedia.setAttribute('aria-label','素材パネルを閉じる');closeMedia.onclick=()=>setPanel('edit');document.querySelector('.media-panel .panel-heading').append(closeMedia);
 setPanel('edit');
