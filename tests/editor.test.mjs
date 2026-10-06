@@ -71,7 +71,7 @@ try {
  await page.screenshot({path:'test-results/desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'test-results/mobile.png',fullPage:true});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile viewport has no horizontal overflow');
- await page.locator('[data-panel="settings"]').click();assert(await page.locator('.inspector-panel').isVisible(),'mobile inspector accessible');
+ await page.locator('.track[data-kind=clips] .timeline-clip').first().click();assert(await page.locator('.inspector-panel').isVisible(),'mobile adjustment appears on selecting a clip without changing tabs');
  assert.deepEqual(errors,[],'no uncaught browser errors');
  console.log('UI: MOV-named native-decoded fixture import, demo multi-clip, text and mobile overflow passed.');
 } catch(error){await page.screenshot({path:'test-results/failure.png',fullPage:true});console.error('UI state:',await page.locator('#toast').textContent(),await page.locator('#exportMessage').textContent());throw error;} finally {await browser.close();}
