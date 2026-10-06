@@ -7,8 +7,10 @@ import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
 import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 import { loadRecovery, saveRecovery } from './project-store.js';
 import { recoveryUI } from './recovery-ui.js';
+import { installMobileEditor } from './mobile-editor.js';
 
 const $ = id => document.getElementById(id);
+window.addEventListener('DOMContentLoaded',installMobileEditor,{once:true});
 const assets = new Map();
 let project = { version: 2, name: '名称未設定のプロジェクト', aspect: '16:9', clips: [], texts: [], music: [] };
 let selected = null, time = 0, playing = false, busy = false, exportController = null, resultUrl = null;

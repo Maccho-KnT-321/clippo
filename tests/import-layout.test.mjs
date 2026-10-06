@@ -25,7 +25,7 @@ try{
   assert.equal(await page.locator('#importReport').isVisible(),false);
   assert.equal(await page.locator('body').getAttribute('data-panel'),'edit','import stays in editor');
   const chooser=page.waitForEvent('filechooser');await page.locator('#editorImportBtn').tap();assert((await chooser).isMultiple());
-  await page.locator('#editorFilesImportBtn').tap();
+  await page.locator('#moreActionsBtn').tap();await page.locator('#editorFilesImportBtn').tap();
   assert.match(await page.locator('#filesImportDialog').innerText(),/ファイルに保存/);
   const filesChooser=page.waitForEvent('filechooser');await page.locator('#chooseFilesMediaBtn').tap();
   const fallback=await filesChooser;assert(fallback.isMultiple());

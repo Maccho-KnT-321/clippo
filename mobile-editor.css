@@ -1,0 +1,21 @@
+.mobile-editor-toolbar,.preview-toggle{display:none}
+.mobile-tools-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.mobile-tools-grid button{min-height:48px;border:1px solid var(--line);border-radius:8px;padding:10px;background:#30382a;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px}
+.mobile-tools-grid #snapBtn{grid-column:1/-1}.mobile-tools-grid [aria-pressed=true]{color:var(--accent)}
+@media(max-width:580px){
+  .timeline-toolbar,.precision-tools,.selection-bar{display:none!important}
+  .mobile-editor-toolbar{display:flex;align-items:center;gap:6px;padding:5px 8px;min-height:54px;flex-shrink:0;border-bottom:1px solid var(--line)}
+  .mobile-editor-toolbar button{min-height:44px;flex-shrink:0;padding:6px 9px;font-size:12px}
+  .mobile-editor-toolbar .editor-add{flex:1;min-width:0}.mobile-editor-toolbar #moreActionsBtn{margin:0;border:1px solid var(--line);border-radius:8px;background:#283123}
+  .mobile-editor-toolbar #splitBtn span{display:inline!important}
+  body.has-clips .workspace{grid-template-rows:clamp(180px,26dvh,220px) minmax(0,1fr) calc(54px + env(safe-area-inset-bottom))}
+  .viewer-heading>.eyebrow{display:none}.viewer-heading{gap:6px;margin-bottom:3px}
+  .preview-toggle{display:block;white-space:nowrap;min-height:32px;padding:3px 5px;font-size:11px;color:var(--accent)}
+  .viewer-heading .aspect-control{font-size:11px;gap:4px}.aspect-control select{padding:4px 6px}
+  body.has-clips.preview-collapsed .workspace{grid-template-rows:90px minmax(0,1fr) calc(54px + env(safe-area-inset-bottom))}
+  body.has-clips.preview-collapsed .preview-stage{display:none}
+  .timeline-heading{min-height:36px}.timeline-heading h2{font-size:11px}.timeline-zoom{font-size:10px}
+  body[data-panel=media] .media-panel,body[data-panel=settings] .inspector-panel{max-height:calc(100dvh - 52px - 180px - 54px - env(safe-area-inset-bottom))}
+  #mobileToolsDialog{width:calc(100% - 20px);max-height:calc(100dvh - 30px);padding:16px;border-radius:16px}
+  #mobileToolsDialog .dialog-description{margin-bottom:12px}
+}
