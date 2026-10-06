@@ -18,4 +18,24 @@
   body[data-panel=media] .media-panel,body[data-panel=settings] .inspector-panel{max-height:calc(100dvh - 52px - 180px - 54px - env(safe-area-inset-bottom))}
   #mobileToolsDialog{width:calc(100% - 20px);max-height:calc(100dvh - 30px);padding:16px;border-radius:16px}
   #mobileToolsDialog .dialog-description{margin-bottom:12px}
+  .mobile-nav{display:none!important}
+  .timeline-panel{padding-bottom:env(safe-area-inset-bottom)}
+  .workspace,body.has-clips .workspace{grid-template-rows:clamp(180px,26dvh,220px) minmax(0,1fr)!important}
+  body.has-selection .workspace{grid-template-rows:clamp(160px,24dvh,200px) minmax(0,1fr)!important}
+  body.has-clips.preview-collapsed .workspace{grid-template-rows:90px minmax(0,1fr)!important}
+  body .inspector-panel,body[data-panel=settings] .inspector-panel{display:none!important;position:static;max-height:none;min-height:0;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;box-shadow:none;padding:5px 10px;overflow:hidden;flex-shrink:0;background:#252d21}
+  body.has-selection .inspector-panel,body.has-selection[data-panel=settings] .inspector-panel{display:block!important}
+  body .inspector-panel>.panel-heading{display:none}
+  #inspector{display:flex;align-items:stretch;gap:8px;overflow-x:auto;max-height:86px;overscroll-behavior:contain;padding-bottom:4px}
+  #inspector>.inspector-heading,#inspector>.inspector-note,#inspector>.inspector-section-title,#inspector>.panel-summary{display:none}
+  #inspector>.field{flex:0 0 126px;min-width:0;margin:0;gap:4px}
+  #inspector>.field>span{font-size:11px;white-space:nowrap}
+  #inspector>.field[data-key=volume]{order:-4;flex-basis:145px}
+  #inspector>.field[data-key=speed],#inspector>.field[data-key=text]{order:-3}
+  #inspector>.field[data-key=text]{flex-basis:200px}
+  #inspector textarea{height:64px;min-height:64px}
+  #inspector>.field input,#inspector>.field select{width:100%;min-height:44px}
+  #inspector>.quick-presets,#inspector>.advanced-controls,#inspector>.transition-presets,#inspector>.button{flex:0 0 190px;margin:0;overflow:auto;max-height:100px}
+  #inspector>.advanced-controls summary{font-size:12px}
+  body[data-panel=media] .media-panel{bottom:0;max-height:60dvh}
 }

@@ -128,7 +128,7 @@ try {
   await touchPage.locator('.transition-button').first().tap();
   await touchPage.screenshot({path:'test-results/touch-before-effect.png',fullPage:true});
   await touchPage.getByLabel('切り替え効果',{exact:true}).selectOption('dissolve');
-  assert.equal(await touchPage.locator('body').getAttribute('data-panel'),'settings','touch transition opens bottom inspector');
+  assert.equal(await touchPage.locator('body').getAttribute('data-panel'),'edit','touch transition stays in the same editing workspace');
   await touchPage.screenshot({path:'test-results/polish-touch.png',fullPage:true});
   await mobile.close();
   assert.deepEqual(errors,[],'no uncaught browser errors');

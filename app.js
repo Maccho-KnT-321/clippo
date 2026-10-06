@@ -7,7 +7,7 @@ import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
 import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 import { loadRecovery, saveRecovery } from './project-store.js';
 import { recoveryUI } from './recovery-ui.js';
-import { installMobileEditor } from './mobile-editor.js';
+import { installMobileEditor } from './mobile-editor.js?v=20261006-inline-edit';
 
 const $ = id => document.getElementById(id);
 window.addEventListener('DOMContentLoaded',installMobileEditor,{once:true});
@@ -35,7 +35,7 @@ function remember() { stop(); past.push(clone(project)); if (past.length > 60) p
 function edit(fn) { if (busy) return; remember(); fn(); time = Math.min(time, duration()); refresh(); }
 function selection() { if (!selected) return null; return project[selected.kind].find(item => item.id === selected.id); }
 function select(kind, id) { selected = { kind, id }; transitionSelection=null; renderTimeline(); renderInspector(); }
-function setPanel(name){ document.body.dataset.panel=name; for(const tab of document.querySelectorAll('[data-panel]')){tab.classList.toggle('active',tab.dataset.panel===name);tab.setAttribute('aria-pressed',String(tab.dataset.panel===name));} }
+function setPanel(name){ if(innerWidth<=580&&name==='settings')name='edit';document.body.dataset.panel=name; for(const tab of document.querySelectorAll('[data-panel]')){tab.classList.toggle('active',tab.dataset.panel===name);tab.setAttribute('aria-pressed',String(tab.dataset.panel===name));} }
 async function renderPreview() {
   if (renderPending) { renderAgain = true; return; }
   renderPending = true;
@@ -252,20 +252,23 @@ function wireClipMove(button,item,kind,start,row,board){
 }
 function updateTime() { $('scrub').value = time; $('timeDisplay').textContent = fmt(time) + ' / ' + fmt(duration()); const head = document.querySelector('.playhead'); if (head) head.style.left = (72 + time * timelineScale) + 'px'; }
 function renderInspector() {
+  const target=$('inspector'),identity=(selected?.id||'')+':'+(transitionSelection||''),scroll=target.dataset.itemId===identity?target.scrollLeft:0;target.dataset.itemId=identity;
+  try{
   $('preview').classList.toggle('text-selected',selected?.kind==='texts');
   const panel = $('inspector'), item = selection(); panel.replaceChildren();
   if (!item) { panel.innerHTML = '<div class="empty-inspector">タイムラインの素材を選ぶと、ここで調整できます。</div>'; return; }
   if(transitionSelection===item.id&&selected.kind==='clips'){renderTransitionInspector(panel,item);return;}
   const heading = document.createElement('h3'); heading.className = 'inspector-heading'; heading.textContent = selected.kind === 'texts' ? 'テロップを編集' : assets.get(item.assetId)?.name || '素材を編集'; panel.append(heading);
   const field = (label, key, type, options = {}) => {
-    const wrap = document.createElement('label'); wrap.className = 'field';
+    const wrap = document.createElement('label'); wrap.className = 'field';wrap.dataset.key=key;
     const caption = document.createElement('span'); caption.textContent = label; wrap.append(caption);
     const input = document.createElement(type === 'select' ? 'select' : type === 'textarea' ? 'textarea' : 'input');
     input.setAttribute('aria-label',label);
     if (type === 'select') for (const [value, text] of options.choices) { const option = document.createElement('option'); option.value = value; option.textContent = text; input.append(option); }
-    else if (type !== 'textarea') input.type = type;
+    else if (type !== 'textarea') input.type = key==='volume'&&innerWidth<=580?'range':type;
     for (const key of ['min', 'max', 'step']) if (options[key] != null) input[key] = options[key];
     if (type === 'checkbox') input.checked = !!item[key]; else {const value=item[key]??options.default??'';input.value=typeof value==='number'?Number(value.toFixed(3)):value;}
+    if(key==='volume'&&input.type==='range'){const show=()=>caption.textContent='音量 '+Math.round(Number(input.value)*100)+'%';input.oninput=show;show();}
     input.onchange = () => {
       const value = type === 'checkbox' ? input.checked : type === 'number' || type === 'range' ? Number(input.value) : input.value;
       if (typeof value === 'number' && (!Number.isFinite(value) || (options.min != null && value < options.min) || (options.max != null && value > options.max))) { toast('範囲内の数値を入力してください。'); renderInspector(); return; }
@@ -307,6 +310,7 @@ function renderInspector() {
     const children=[...panel.children],start=children.findIndex(el=>el.classList.contains('inspector-section-title'));
     if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>advancedOpen=details.open;panel.append(details);}
   }
+  }finally{if(innerWidth<=580)target.scrollLeft=scroll;}
 }
 const inspectFile=inspectLocalFile;
 async function importFiles(files,insertion=null) {

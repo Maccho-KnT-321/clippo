@@ -13,10 +13,10 @@ try{
   await page.locator('#togglePreviewBtn').tap();assert(await page.locator('#timeline').evaluate(e=>e.clientHeight)>before+50);
   await page.locator('#togglePreviewBtn').tap();
   await page.locator('#moreActionsBtn').tap();await page.locator('#addTextBtn').tap();await page.locator('.text-clip').waitFor();assert.equal(await page.locator('#mobileToolsDialog').isVisible(),false);
-  await page.locator('.mobile-nav [data-panel=edit]').tap();
+  assert.equal(await page.locator('.mobile-nav').isVisible(),false);
   await page.locator('#moreActionsBtn').tap();await page.locator('#snapBtn').tap();assert.equal(await page.locator('#snapBtn').getAttribute('aria-pressed'),'false');await page.getByRole('button',{name:'編集ツールを閉じる'}).tap();
   await page.screenshot({path:'test-results/mobile-space.png',fullPage:true});
-  await page.setViewportSize({width:1440,height:1000});assert.equal(await page.locator('.timeline-toolbar #splitBtn').count(),1);assert.equal(await page.locator('.precision-tools #snapBtn').count(),1);
-  await page.setViewportSize({width:390,height:667});assert.equal(await page.locator('#mobileEditorToolbar #splitBtn').count(),1);
+  await page.setViewportSize({width:1440,height:1000});await page.locator('.timeline-toolbar #splitBtn').waitFor();assert.equal(await page.locator('.precision-tools #snapBtn').count(),1);
+  await page.setViewportSize({width:390,height:667});await page.locator('#mobileEditorToolbar #splitBtn').waitFor();
   console.log('Mobile: single-row toolbar, timeline >=40% at 667/744/844px, preview collapse, tools and desktop restoration passed.');
 }finally{await browser.close();}

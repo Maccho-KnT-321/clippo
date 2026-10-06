@@ -6,7 +6,7 @@ try{
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   await page.goto('http://127.0.0.1:4173');await page.locator('#welcomeDemo').click();
   await page.locator('.timeline-clip').nth(2).waitFor();
-  await page.locator('.mobile-nav [data-panel=media]').click();await page.locator('#renameProjectBtn').click();await page.locator('#renameInput').fill('家族の一日');await page.locator('#confirmRenameBtn').click();await page.locator('.mobile-nav [data-panel=edit]').click();
+  await page.locator('#moreActionsBtn').click();await page.getByRole('button',{name:'素材一覧',exact:true}).click();await page.locator('#renameProjectBtn').click();await page.locator('#renameInput').fill('家族の一日');await page.locator('#confirmRenameBtn').click();await page.getByRole('button',{name:'素材パネルを閉じる'}).click();
   await page.locator('#moreActionsBtn').click();await page.locator('#addTextBtn').click();
   await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='saved');
   const saved=await page.evaluate(async()=>{const {loadRecovery}=await import('./project-store.js');const s=await loadRecovery();return {revision:s.revision,name:s.project.name,clips:s.project.clips.length,texts:s.project.texts.length,files:s.assets.length};});
