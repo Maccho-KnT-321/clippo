@@ -3,3 +3,7 @@ Thumbs.db
 .sites-runtime/
 node_modules/
 test-results/
+dist/
+.vercel/
+
+.vercel
