@@ -6,7 +6,7 @@ export function installMobileEditor(){
   const primary=['editorImportBtn','splitBtn','addTextBtn','addMusicBtn','deleteBtn','undoBtn','moreActionsBtn'];
   const inspector=document.querySelector('.inspector-panel'),inspectorAnchor=document.createComment('desktop inspector');inspector.before(inspectorAnchor);
   const library=document.createElement('button');library.textContent='素材一覧';library.onclick=()=>{sheet.close();document.body.dataset.panel='media';};sheet.querySelector('.mobile-tools-grid').append(library);
-  const extras=['editorFilesImportBtn','adjustBtn','redoBtn','duplicateBtn','copyBtn','pasteBtn','mergeBtn','trimStartBtn','trimEndBtn','snapBtn'];
+  const extras=['autoEditBtn','editorFilesImportBtn','adjustBtn','redoBtn','duplicateBtn','copyBtn','pasteBtn','mergeBtn','trimStartBtn','trimEndBtn','snapBtn'];
   const moves=['moveLeftBtn','moveRightBtn'];
   const originals=new Map([...primary,...extras,...moves].map(id=>{const node=document.getElementById(id),anchor=document.createComment('control '+id);node.before(anchor);return [id,{node,anchor}];}));
   const labels={editorImportBtn:'追加',splitBtn:'分割',addTextBtn:'文字',addMusicBtn:'音楽',deleteBtn:'削除',undoBtn:'戻す',moreActionsBtn:'その他'};

@@ -3,6 +3,7 @@ import { clipDuration, layoutClips, projectDuration, transitionDuration } from '
 import { insertionAt, trimToPlayhead } from './editing.js';
 import { musicStore, makePresetMusic } from './music-library.js';
 import { templates } from './templates.js';
+import { planAutoEdit } from './auto-edit.js';
 import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
 import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 import { loadRecovery, saveRecovery } from './project-store.js';
@@ -646,6 +647,26 @@ $('applyTemplateBtn').onclick=async()=>{
   }catch(error){for(const asset of loaded)if(!assets.has(asset.id))URL.revokeObjectURL(asset.url);$('templateStatus').textContent=error.message;}finally{button.disabled=false;}
 };
 for(const parent of [document.querySelector('.media-footer'),document.querySelector('.welcome-actions')]){const b=document.createElement('button');b.className='button template-launch';b.textContent='テンプレートでつくる';b.onclick=openTemplates;parent.prepend(b);}
+
+const autoDialog=dialogShell('autoEditDialog','おまかせ編集','素材を選んで、長さと雰囲気を決めるだけ。完成後も自由に直せます。');
+autoDialog.insertAdjacentHTML('beforeend','<button id="autoFilesBtn" class="button full-width">動画・写真を選ぶ</button><input id="autoFiles" type="file" accept="video/*,image/*,.mov,.mp4,.m4v" multiple hidden><p id="autoSources" class="inspector-note"></p><div id="autoSourceList" class="auto-source-list"></div><label class="field"><span>動画の長さ</span><select id="autoSeconds"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="60">1分</option></select></label><label class="field"><span>雰囲気</span><select id="autoStyle"><option value="bright">軽快：短いカットと明るい音楽</option><option value="calm">ゆったり：ディゾルブと穏やかな音楽</option></select></label><label class="field"><span>画面の形</span><select id="autoAspect"><option value="9:16">縦：スマホ・SNS</option><option value="16:9">横：思い出・YouTube</option><option value="1:1">正方形</option></select></label><label class="field"><span>タイトル（なくてもOK）</span><input id="autoTitle" maxlength="100" placeholder="今日の思い出"></label><label class="replace-music"><input id="autoBgm" type="checkbox" checked> おまかせBGMを入れる</label><p class="inspector-note">素材は外部に送信しません。端末内のルールで素材の中ほどを切り出し、指定した長さにまとめます。AIによる見どころ・手ブレ判定ではありません。短い素材では指定より短くなる場合があります。同じ素材を複数回使うことがあります。今の編集は置き換わりますが「元に戻す」で戻せます。</p><button id="autoCreateBtn" class="button primary full-width">おまかせで動画をつくる</button><p id="autoStatus" role="status" aria-live="polite"></p>');
+function openAutoEdit(){if(busy)return;$('autoFiles').value='';$('autoStatus').textContent='';$('autoSources').textContent='読み込み済みの素材を選ぶか、新しく動画・写真を追加してください（最大24個）。';$('autoSourceList').replaceChildren();for(const asset of [...assets.values()].filter(a=>a.type!=='audio').slice(0,24)){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=true;check.value=asset.id;label.append(check,document.createTextNode(asset.name));$('autoSourceList').append(label);}autoDialog.showModal();}
+$('autoFilesBtn').onclick=()=>$('autoFiles').click();$('autoFiles').onchange=e=>{$('autoSources').textContent=e.target.files.length+'個を選択しました（先頭24個を使用）。';$('autoSourceList').hidden=!!e.target.files.length;};
+autoDialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
+$('autoCreateBtn').onclick=async()=>{
+  if(busy)return;const loaded=[];busy=true;stop();$('autoCreateBtn').disabled=true;autoDialog.querySelector('.dialog-close').disabled=true;
+  const seconds=$('autoSeconds').value,style=$('autoStyle').value,aspect=$('autoAspect').value,title=$('autoTitle').value.trim(),bgm=$('autoBgm').checked;
+  try{
+    const files=[...$('autoFiles').files].slice(0,24);
+    for(const [i,file]of files.entries()){$('autoStatus').textContent=`素材を準備中 ${i+1}/${files.length}：${file.name}`;await new Promise(r=>setTimeout(r,0));const asset=await inspectFile(file);loaded.push(asset);if(asset.type==='audio')throw new Error('動画・写真を選んでください。');}
+    const chosen=files.length?loaded:[...$('autoSourceList').querySelectorAll('input:checked')].map(input=>assets.get(input.value)).filter(Boolean);
+    const plan=planAutoEdit(chosen,{seconds,style});$('autoStatus').textContent='カットと音楽を組み立てています…';
+    const music=bgm?await audioAsset(presetFile(style)):null;
+    busy=false;edit(()=>{for(const a of loaded)assets.set(a.id,a);project.name=title||'おまかせ編集';project.aspect=aspect;project.clips=plan.clips.map(c=>({...newClip(chosen.find(a=>a.id===c.assetId)),...c,fit:'contain',volume:bgm?.35:1,fadeIn:.1,fadeOut:.1}));project.texts=title?[{id:uid(),text:title,start:0,end:Math.min(3,plan.duration),size:54,color:'#ffffff',position:'bottom',background:true,fade:.25}]:[];project.music=music?fillMusic(music,plan.duration):[];time=0;selected={kind:'clips',id:project.clips[0].id};transitionSelection=null;});autoDialog.close();$('fitTimelineBtn').click();toast(`約${Math.round(plan.duration)}秒の動画ができました。再生して確認し、気になるところだけ直しましょう。`);
+  }catch(error){for(const a of loaded)if(!assets.has(a.id))URL.revokeObjectURL(a.url);$('autoStatus').textContent=error.message;}
+  finally{busy=false;$('autoCreateBtn').disabled=false;autoDialog.querySelector('.dialog-close').disabled=false;refresh();}
+};
+for(const parent of [document.querySelector('.media-footer'),document.querySelector('.welcome-actions'),document.querySelector('.timeline-toolbar')]){const b=document.createElement('button');if(parent.classList.contains('timeline-toolbar'))b.id='autoEditBtn';b.className='button auto-launch';b.textContent='おまかせ編集';b.onclick=()=>{$('autoSourceList').hidden=false;openAutoEdit();};parent.prepend(b);}
 
 const beatDialog=dialogShell('beatDialog','かんたんBGMづくり','光っているマスで音が鳴ります。お手本を選んで、好きな音を足したり消したりしよう。');
 beatDialog.insertAdjacentHTML('beforeend','<div class="beat-options"><label>お手本 <select id="beatPreset"><option value="pop">ポップ</option><option value="chill">ゆったり</option><option value="dance">ダンス</option></select></label><label>速さ <select id="beatTempo"><option value="90">ゆっくり</option><option value="110" selected>ふつう</option><option value="130">はやい</option></select></label></div><div id="beatGrid" class="beat-grid"></div><p class="inspector-note">4拍のリズムを8回くり返して保存します。ベースの音程はおまかせ。音の重なりは自動で抑えます。</p><div class="music-actions"><button id="playBeatBtn" class="button">▶ 聴いてみる</button><button id="stopBeatBtn" class="button">■ 止める</button><button id="saveBeatBtn" class="button primary">保存して動画に使う</button></div><label class="replace-music"><input id="replaceBeatMusic" type="checkbox" checked> 今の音楽と入れ替える（元に戻せます）</label><p id="beatStatus" role="status"></p>');
