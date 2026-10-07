@@ -11,7 +11,7 @@ try{
   const speed=page.getByLabel('再生速度',{exact:true});await speed.scrollIntoViewIfNeeded();const offset=await page.locator('#inspector').evaluate(e=>e.scrollLeft);await speed.fill('2');await speed.dispatchEvent('change');assert.equal(await page.getByLabel('再生速度',{exact:true}).inputValue(),'2');assert(await page.locator('#inspector').evaluate(e=>e.scrollLeft)>=offset-2,'editing does not reset the horizontal adjustment position');
   const before=await page.locator('#timeline').boundingBox(),panel=await page.locator('.inspector-panel').boundingBox();assert(panel.y+panel.height<=before.y||before.y+before.height<=panel.y,'inline settings do not cover the timeline');assert(before.height>230);
   await page.locator('.timeline-clip').first().tap();assert.equal(await page.getByRole('slider',{name:'音量（1 = 100%）'}).inputValue(),'1','selection updates controls in the same workspace');
-  await page.locator('#moreActionsBtn').tap();await page.locator('#addTextBtn').tap();await page.locator('#inspector textarea').fill('その場で編集');await page.locator('#inspector textarea').dispatchEvent('change');assert.match(await page.locator('.text-clip').innerText(),/その場で編集/);
+  await page.locator('#addTextBtn').tap();await page.locator('#inspector textarea').fill('その場で編集');await page.locator('#inspector textarea').dispatchEvent('change');assert.match(await page.locator('.text-clip').innerText(),/その場で編集/);
   await page.screenshot({path:'test-results/inline-mobile.png',fullPage:true});
   await page.setViewportSize({width:1440,height:1000});assert.equal(await page.locator('.workspace>.inspector-panel').count(),1);
   console.log('Inline mobile: no tabs, clip selection updates inline volume, 150% adjustment persists, text editing and timeline remain in one workspace.');

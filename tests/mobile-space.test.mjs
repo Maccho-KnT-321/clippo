@@ -12,7 +12,7 @@ try{
   await page.setViewportSize({width:390,height:667});const before=await page.locator('#timeline').evaluate(e=>e.clientHeight);
   await page.locator('#togglePreviewBtn').tap();assert(await page.locator('#timeline').evaluate(e=>e.clientHeight)>before+50);
   await page.locator('#togglePreviewBtn').tap();
-  await page.locator('#moreActionsBtn').tap();await page.locator('#addTextBtn').tap();await page.locator('.text-clip').waitFor();assert.equal(await page.locator('#mobileToolsDialog').isVisible(),false);
+  await page.locator('#addTextBtn').tap();await page.locator('.text-clip').waitFor();assert.equal(await page.locator('#mobileToolsDialog').isVisible(),false);
   assert.equal(await page.locator('.mobile-nav').isVisible(),false);
   await page.locator('#moreActionsBtn').tap();await page.locator('#snapBtn').tap();assert.equal(await page.locator('#snapBtn').getAttribute('aria-pressed'),'false');await page.getByRole('button',{name:'編集ツールを閉じる'}).tap();
   await page.screenshot({path:'test-results/mobile-space.png',fullPage:true});
