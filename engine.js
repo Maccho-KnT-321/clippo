@@ -93,20 +93,24 @@ export class EditorEngine {
   }
   async draw(project, time, generation = this.generation) {
     const current = () => generation === this.generation;
-    const retained = new Set([...project.clips.map(c => `clip:${c.id}`), ...(project.music || []).map(m => `music:${m.id}`)]);
+    // Two alternating decoder lanes cover both ordinary cuts and dissolves.
+    // Timeline clip IDs must not each allocate their own video decoder.
+    const clipKey = clip => `clip:lane:${project.clips.indexOf(clip)%2}`;
+    const musicKey = music => `music:asset:${music.assetId}`;
+    const retained = new Set(['clip:lane:0','clip:lane:1',...(project.music||[]).filter(m=>time>=m.start&&time<m.start+m.out-m.in).map(musicKey)]);
     for (const key of this.media.keys()) if (!retained.has(key)) this.release(key);
     const layout = layoutClips(project.clips);
     let visible = layout.filter(item => time >= item.start && time < item.end);
     if (!visible.length && layout.length) visible = [time < 0 ? layout[0] : layout.at(-1)];
     const progress = visible.length > 1 ? clamp((time - visible[1].start) / visible[0].overlap, 0, 1) : 0;
     const active = new Set();
-    for (const item of visible) active.add(`clip:${item.clip.id}`);
-    for (const m of project.music || []) if (time >= m.start && time < m.start + m.out - m.in) active.add(`music:${m.id}`);
+    for (const item of visible) active.add(clipKey(item.clip));
+    for (const m of project.music || []) if (time >= m.start && time < m.start + m.out - m.in) active.add(musicKey(m));
     for (const [key, entry] of this.media) if (!active.has(key)) entry.el.pause?.();
     const visuals = [];
     for (const [index, item] of visible.entries()) {
       const clip = item.clip, elapsed = clamp(time - item.start, 0, item.duration);
-      const key = `clip:${clip.id}`, visual = await this.element(clip.assetId, key);
+      const key = clipKey(clip), visual = await this.element(clip.assetId, key);
       if (!current()) return;
       const fade = envelope(elapsed, item.duration, clip.fadeIn, clip.fadeOut);
       visuals.push({ visual, clip, fade });
@@ -127,7 +131,7 @@ export class EditorEngine {
     for (const music of project.music || []) {
       const elapsed = time - music.start, len = music.out - music.in;
       if (elapsed < 0 || elapsed >= len) continue;
-      const key = `music:${music.id}`; active.add(key);
+      const key = musicKey(music); active.add(key);
       const el = await this.element(music.assetId, key);
       if (!current()) return;
       const gain = this.node(el, key);
@@ -146,7 +150,16 @@ export class EditorEngine {
     ctx.save();
     try {
     ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, w, h);
-    if (visuals.length === 1) ctx.drawImage(this.visualFrame(visuals[0], 0), 0, 0);
+    if (visuals.length === 1) {
+      const {visual,clip,fade}=visuals[0];
+      const neutral=!(Number(clip.rotation)||0)&&!clip.flipX&&(clip.zoom??1)===1&&(clip.brightness??1)===1&&(clip.contrast??1)===1&&(clip.saturation??1)===1;
+      if(neutral){
+        const vw=visual.videoWidth||visual.naturalWidth,vh=visual.videoHeight||visual.naturalHeight;
+        if(!vw||!vh)throw new Error('映像フレームを読み込めません。');
+        const scale=clip.fit==='cover'?Math.max(w/vw,h/vh):Math.min(w/vw,h/vh);
+        ctx.globalAlpha=fade;ctx.drawImage(visual,(w-vw*scale)/2,(h-vh*scale)/2,vw*scale,vh*scale);ctx.globalAlpha=1;
+      }else ctx.drawImage(this.visualFrame(visuals[0],0),0,0);
+    }
     else if (visuals.length > 1) {
       const outgoing = this.visualFrame(visuals[0], 0), incoming = this.visualFrame(visuals[1], 1);
       const type = visible[0].clip.transition.type;
@@ -220,7 +233,7 @@ export class EditorEngine {
     const tick = async () => {
       if (generation !== this.generation) return;
       const now=performance.now();
-      if(this.exporting&&now-lastRender<1000/30-1){this.frame=requestAnimationFrame(tick);return;}
+      if(now-lastRender<1000/30-1){this.frame=requestAnimationFrame(tick);return;}
       lastRender=now;
       const t = Math.min(total, time + (performance.now() - start) / 1000);
       try {
@@ -246,14 +259,14 @@ export class EditorEngine {
       this.mediaContainer();
       // Let any cancelled preview seek settle before preparing export media.
       await this.renderQueue.catch(() => {});
-      // Preload all timeline instances before starting the recording clock.
-      for (const c of project.clips) {
+      // Prime only two decoder lanes, not every cut in a long montage.
+      for (const [index,c] of project.clips.slice(0,2).entries()) {
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
-        const el = await this.element(c.assetId, `clip:${c.id}`); this.node(el, `clip:${c.id}`); await this.seek(el, c.in);
+        const key=`clip:lane:${index}`;const el = await this.element(c.assetId,key); this.node(el,key); await this.seek(el,c.in);
       }
-      for (const m of project.music || []) {
+      for (const m of (project.music || []).filter(m=>m.start<=0&&m.out>m.in)) {
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
-        const el = await this.element(m.assetId, `music:${m.id}`); this.node(el, `music:${m.id}`); await this.seek(el, m.in);
+        const key=`music:asset:${m.assetId}`;const el = await this.element(m.assetId,key); this.node(el,key); await this.seek(el,m.in);
       }
       const [aw, ah] = project.aspect.split(':').map(Number);
       const ratio=aw/ah;

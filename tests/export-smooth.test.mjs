@@ -21,7 +21,7 @@ for(const software of [false,true]){
       // Match the app's modal export, where source decoders must stay rendered.
       const dialog=document.createElement('dialog');document.body.append(dialog);dialog.showModal();
       const blob=await engine.export(project,{height:720,mimeType:'video/mp4'});
-      const source=engine.media.get('clip:v').el;
+      const source=engine.media.get('clip:lane:0').el;
       const attached=source.isConnected&&dialog.contains(source);
       engine.dispose();dialog.close();dialog.remove();
       const video=document.createElement('video');video.muted=true;video.playsInline=true;video.src=URL.createObjectURL(blob);document.body.append(video);

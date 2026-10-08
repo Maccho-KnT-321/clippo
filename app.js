@@ -45,7 +45,7 @@ async function renderPreview() {
 }
 function refresh() {
   document.body.classList.toggle('has-clips',project.clips.length>0);
-  if(!busy){const [w,h]=project.aspect.split(':').map(Number); const height=540,width=Math.round(height*w/h);if($('preview').width!==width||$('preview').height!==height){$('preview').width=width;$('preview').height=height;}}
+  if(!busy){const [w,h]=project.aspect.split(':').map(Number); const height=innerWidth<=580?360:540,width=Math.round(height*w/h);if($('preview').width!==width||$('preview').height!==height){$('preview').width=width;$('preview').height=height;}}
   $('projectName').value = project.name;
   $('aspect').value = project.aspect;
   $('previewEmpty').hidden = project.clips.length > 0;
