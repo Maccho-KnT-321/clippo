@@ -1,4 +1,4 @@
-import { EditorEngine, supportedFormats } from './engine.js?v=20261004-product-media-host';
+import { EditorEngine, supportedFormats } from './engine.js?v=20261010-reviewed-edit';
 import { clipDuration, layoutClips, projectDuration, transitionDuration } from './timeline.js';
 import { insertionAt, trimToPlayhead } from './editing.js';
 import { musicStore, makePresetMusic } from './music-library.js';
@@ -9,13 +9,14 @@ import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 import { loadRecovery, saveRecovery } from './project-store.js';
 import { recoveryUI } from './recovery-ui.js';
 import { installMobileEditor } from './mobile-editor.js?v=20261006-inline-edit';
+import { keepScreenAwake, playbackMessage } from './export-support.js';
 
 const $ = id => document.getElementById(id);
 window.addEventListener('DOMContentLoaded',installMobileEditor,{once:true});
 const assets = new Map();
 let project = { version: 2, name: '名称未設定のプロジェクト', aspect: '16:9', clips: [], texts: [], music: [] };
 let selected = null, time = 0, playing = false, busy = false, exportController = null, resultUrl = null;
-let past = [], future = [], renderPending = false, renderAgain = false, toastTimer;
+let past = [], future = [], renderPending = false, renderAgain = false, latestPreview = null, toastTimer;
 let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUntil=0;
 let revealedSelection=null;
 let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
@@ -46,11 +47,12 @@ function select(kind, id) {
   renderTimeline(); renderInspector();
 }
 function setPanel(name){ if(innerWidth<=580&&name==='settings')name='edit';document.body.dataset.panel=name; for(const tab of document.querySelectorAll('[data-panel]')){tab.classList.toggle('active',tab.dataset.panel===name);tab.setAttribute('aria-pressed',String(tab.dataset.panel===name));} }
-async function renderPreview() {
+async function renderPreview(preview=null) {
+  latestPreview=preview;
   if (renderPending) { renderAgain = true; return; }
   renderPending = true;
-  try { await engine.render(project, time); } catch (error) { console.warn(error); toast('プレビューを表示できません。素材の形式をご確認ください。'); }
-  finally { renderPending = false; if (renderAgain) { renderAgain = false; renderPreview(); } }
+  try { const request=latestPreview;await engine.render(request?.project??project,request?.time??time); } catch (error) { console.warn(error); toast('プレビューを表示できません。素材の形式をご確認ください。'); }
+  finally { renderPending = false; if (renderAgain) { renderAgain = false; renderPreview(latestPreview); } }
 }
 function refresh() {
   document.body.classList.toggle('has-clips',project.clips.length>0);
@@ -174,7 +176,7 @@ function renderTimeline() {
         const handle=document.createElement('span');handle.className='trim-handle trim-'+edge;handle.title=edge==='in'?'開始を調整':'終了を調整';
         handle.onpointerdown=e=>{
           if(busy)return;e.preventDefault();e.stopPropagation();stop();handle.setPointerCapture(e.pointerId);
-          const origin=e.clientX, before=clone(item), initialScroll=target.scrollLeft;let changed=false;
+          const origin=e.clientX, before=clone(item), beforeTime=time, beforeSelection=selected?{...selected}:null, beforePast=past.slice(),beforeFuture=future.slice(),initialScroll=target.scrollLeft;let changed=false;
           const move=ev=>{
             const delta=(ev.clientX-origin+target.scrollLeft-initialScroll)/scale;
             if(!changed&&Math.abs(ev.clientX-origin)>2){remember();changed=true;}
@@ -189,9 +191,19 @@ function renderTimeline() {
             }else item.out=Math.max(before.in+.05,Math.min(asset.duration,before.out+delta));
             const len=kind==='clips'?clipDuration(item):kind==='texts'?item.end-item.start:item.out-item.in;
             b.style.width=Math.max(26,len*scale-3)+'px';if(kind!=='clips')b.style.left=item.start*scale+'px';
-            b.querySelector('small').textContent=fmt(len); time=Math.min(time,duration());updateTime();renderPreview();
+            b.querySelector('small').textContent=fmt(len);
+            if(kind==='clips'){
+              const entry=layoutClips(project.clips).find(entry=>entry.clip.id===item.id);
+              const rate=Math.max(.25,Math.min(4,item.speed||1));
+              const frameTime=edge==='in'?0:Math.max(0,len-.001/rate);
+              time=entry.start+frameTime;updateTime();
+              // Inspect the chosen source edge, not the neighboring clip or a
+              // dissolve/fade that can hide the actual frame being cut.
+              const frameClip={...clone(item),fadeIn:0,fadeOut:0,transition:{type:'none',duration:0}};
+              renderPreview({project:{...project,clips:[frameClip],texts:[],music:[]},time:frameTime});
+            }else{time=Math.min(time,duration());updateTime();renderPreview();}
           };
-          const finish=ev=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);suppressClickUntil=performance.now()+350;if(ev.type==='pointercancel'&&changed){Object.assign(item,before);past.pop();}selected={kind,id:item.id};refresh();};
+          const finish=ev=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);suppressClickUntil=performance.now()+350;if(ev.type==='pointercancel'){if(changed){Object.assign(item,before);past=beforePast;future=beforeFuture;}time=beforeTime;selected=beforeSelection;}else selected={kind,id:item.id};refresh();};
           handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);
         };handle.onclick=e=>e.stopPropagation();b.append(handle);
       }
@@ -238,13 +250,22 @@ function wireClipMove(button,item,kind,start,row,board){
   button.onpointerdown=e=>{
     if(busy||e.target.closest('.trim-handle')||e.button>0)return;
     const initialX=e.clientX,initialY=e.clientY,initialScroll=$('timeline').scrollLeft;
-    let armed=false,moved=false,destination=-1,newStart=start;
+    let armed=false,moved=false,panning=false,destination=-1,newStart=start;
     const arm=()=>{armed=true;button.setPointerCapture(e.pointerId);button.classList.add('dragging');};
     const timer=e.pointerType==='touch'?setTimeout(arm,320):null;
     if(e.pointerType!=='touch')arm();
     const move=ev=>{
       const dx=ev.clientX-initialX,dy=ev.clientY-initialY;
-      if(!armed){if(Math.abs(dx)>8||Math.abs(dy)>8)clearTimeout(timer);return;}
+      if(!armed){
+        if(Math.abs(dx)>8||Math.abs(dy)>8)clearTimeout(timer);
+        // A quick horizontal swipe navigates the timeline, not the clip.
+        // Native vertical scrolling remains available; holding first still reorders.
+        if(e.pointerType==='touch'&&(panning||Math.abs(dx)>8&&Math.abs(dx)>Math.abs(dy))){
+          if(!panning){panning=true;button.setPointerCapture(e.pointerId);}
+          ev.preventDefault();$('timeline').scrollLeft=initialScroll-dx;
+        }
+        return;
+      }
       if(Math.abs(dx)<4&&!moved)return;ev.preventDefault();moved=true;
       const container=$('timeline'),rect=container.getBoundingClientRect();if(ev.clientX>rect.right-24)container.scrollLeft+=12;if(ev.clientX<rect.left+90)container.scrollLeft-=12;
       const delta=(dx+container.scrollLeft-initialScroll)/timelineScale;
@@ -257,6 +278,7 @@ function wireClipMove(button,item,kind,start,row,board){
     };
     const end=ev=>{
       clearTimeout(timer);button.removeEventListener('pointermove',move);button.removeEventListener('pointerup',end);button.removeEventListener('pointercancel',end);button.classList.remove('dragging');button.style.transform='';
+      if(panning){suppressClickUntil=performance.now()+400;return;}
       if(moved&&ev.type!=='pointercancel'){
         suppressClickUntil=performance.now()+400;
         edit(()=>{if(kind==='clips'){const from=project.clips.indexOf(item);if(destination>=0&&from!==destination){project.clips.splice(from,1);project.clips.splice(destination,0,item);}}else{const delta=newStart-item.start;item.start=newStart;if(kind==='texts')item.end+=delta;}selected={kind,id:item.id};});
@@ -284,7 +306,6 @@ function renderInspector() {
     else if (type !== 'textarea') input.type = ['volume','speed','size'].includes(key)&&innerWidth<=580?'range':type;
     for (const key of ['min', 'max', 'step']) if (options[key] != null) input[key] = options[key];
     if (type === 'checkbox') input.checked = !!item[key]; else {const value=item[key]??options.default??'';input.value=typeof value==='number'?Number(value.toFixed(3)):value;}
-    if(key==='volume'&&input.type==='range'){const show=()=>caption.textContent='音量 '+Math.round(Number(input.value)*100)+'%';input.oninput=show;show();}
     if(key==='speed'&&input.type==='range'){const show=()=>caption.textContent='速度 '+Number(input.value)+'倍';input.oninput=show;show();}
     if(key==='size'&&input.type==='range'){const show=()=>caption.textContent='文字サイズ '+input.value;input.oninput=show;show();}
     input.onchange = () => {
@@ -293,6 +314,30 @@ function renderInspector() {
       if (key === 'in' && value >= item.out || key === 'out' && value <= item.in || key === 'end' && value <= item.start || key === 'start' && selected.kind === 'texts' && value >= item.end) { toast('終了は開始より後に設定してください。'); renderInspector(); return; }
       edit(() => {item[key] = value;if(key==='position'){delete item.x;delete item.y;}});
     };
+    if(key==='volume'){
+      // Audio-only changes are safe on the project used by the running player.
+      // Do not call remember()/refresh(): both stop or rebuild the interaction.
+      const kind=selected.kind,show=()=>{if(input.type==='range')caption.textContent='音量 '+Math.round(Number(input.value)*100)+'%';};
+      const value=()=>input.value.trim()===''?NaN:Number(input.value);
+      const valid=number=>Number.isFinite(number)&&(options.min==null||number>=options.min)&&(options.max==null||number<=options.max);
+      let changed=false,gesture=false;
+      const apply=()=>{
+        if(busy||!project[kind]?.includes(item))return;
+        const volume=value();if(!valid(volume))return;show();if(volume===item.volume)return;
+        if(!changed){past.push(clone(project));if(past.length>60)past.shift();future=[];changed=true;$('undoBtn').disabled=false;$('redoBtn').disabled=true;}
+        item.volume=volume;scheduleRecovery();
+      };
+      const finish=()=>{
+        document.removeEventListener('pointerup',finish);document.removeEventListener('pointercancel',finish);gesture=false;
+        if(!busy&&project[kind]?.includes(item)&&!valid(value())){input.value=item.volume;show();toast('範囲内の数値を入力してください。');}
+        apply();if(changed){changed=false;scheduleRecovery();}
+      };
+      input.oninput=apply;input.onchange=()=>{apply();if(!gesture)finish();};input.onblur=finish;
+      input.addEventListener('pointerdown',()=>{gesture=true;document.addEventListener('pointerup',finish,{once:true});document.addEventListener('pointercancel',finish,{once:true});});
+      const adjustmentKeys=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'];
+      input.addEventListener('keydown',event=>{if(adjustmentKeys.includes(event.key))gesture=true;});
+      input.addEventListener('keyup',event=>{if(adjustmentKeys.includes(event.key))finish();});show();
+    }
     wrap.append(input); panel.append(wrap);
   };
   if (selected.kind === 'texts') {
@@ -355,7 +400,7 @@ const renameButton=document.createElement('button');renameButton.id='renameProje
 renameDialog.addEventListener('close',()=>{if(renameDialog.returnValue==='save')edit(()=>project.name=$('renameInput').value.trim()||'名称未設定のプロジェクト');});
 $('aspect').onchange = e => edit(() => project.aspect = e.target.value);
 $('scrub').oninput = e => { stop(); time = Number(e.target.value); updateTime(); renderPreview(); };
-$('playBtn').onclick = async () => { if (busy || !duration()) return; if (playing) { stop(); return; } if (time >= duration() - .01) time = 0; playing = true; $('playBtn').textContent = 'Ⅱ'; $('playBtn').setAttribute('aria-label','一時停止'); try { await engine.play(project,time,value => { time = value; updateTime(); },error => {stop(); if(error) toast(error.message);}); } catch(error) {stop();toast(error.message);} };
+$('playBtn').onclick = async () => { if (busy || !duration()) return; if (playing) { stop(); return; } if (time >= duration() - .01) time = 0; playing = true; $('playBtn').textContent = 'Ⅱ'; $('playBtn').setAttribute('aria-label','一時停止'); try { await engine.play(project,time,value => { time = value; updateTime(); },error => {stop(); if(error) toast(playbackMessage(error));}); } catch(error) {stop();toast(playbackMessage(error));} };
 $('undoBtn').onclick = () => { if (!past.length || busy) return; stop(); future.push(clone(project)); project = past.pop(); selected = null; time = Math.min(time,duration()); refresh(); };
 $('redoBtn').onclick = () => { if (!future.length || busy) return; stop(); past.push(clone(project)); project = future.pop(); selected = null; refresh(); };
 $('splitBtn').onclick = () => {
@@ -385,11 +430,12 @@ $('exportDialog').addEventListener('close',()=>$('exportReview')?.pause());
 const exportMonitor=document.createElement('div');exportMonitor.id='exportMonitor';exportMonitor.hidden=true;exportMonitor.style.cssText='max-height:160px;overflow:hidden;margin:8px 0';$('exportProgress').before(exportMonitor);
 $('startExportBtn').onclick=async()=>{
   if(busy)return;busy=true;stop();$('startExportBtn').disabled=true;$('closeExportBtn').disabled=true;$('exportResult').replaceChildren();exportController=new AbortController();
+  const screenGuard=keepScreenAwake();$('exportProgress').value=0;$('exportMessage').textContent='書き出しの準備をしています…';
   // The actual recording surface must stay visible inside the modal top layer.
   const canvas=engine.canvas,anchor=document.createComment('preview canvas'),canvasStyle=canvas.getAttribute('style');canvas.before(anchor);exportMonitor.hidden=false;exportMonitor.append(canvas);canvas.style.cssText='display:block;width:100%;max-height:160px;object-fit:contain';
   try{
     const mimeType=$('exportFormat').value;
-    const blob=await engine.export(project,{height:Number($('exportQuality').value)||720,mimeType,onProgress:value=>{$('exportProgress').max=1;$('exportProgress').value=value;$('exportMessage').textContent='書き出し中 '+Math.round(value*100)+'%';},signal:exportController.signal});
+    const blob=await engine.export(project,{height:Number($('exportQuality').value)||720,mimeType,onPrepare:message=>{$('exportMessage').textContent=message;},onProgress:value=>{$('exportProgress').max=1;$('exportProgress').value=value;$('exportMessage').textContent='書き出し中 '+Math.round(value*100)+'%';},signal:exportController.signal});
     if(resultUrl)URL.revokeObjectURL(resultUrl);resultUrl=URL.createObjectURL(blob);
     const name=(project.name.replace(/[\\/:*?"<>|]/g,'_')||'clippo')+(blob.type.includes('mp4')?'.mp4':'.webm');
     const link=document.createElement('a');link.href=resultUrl;link.download=name;link.className='primary-button';link.textContent='動画を保存';$('exportResult').append(link);
@@ -399,8 +445,8 @@ $('startExportBtn').onclick=async()=>{
     const summary=document.createElement('p');summary.className='export-summary';summary.textContent=(blob.type.includes('mp4')?'MP4':'WebM')+' · '+fmt(duration())+' · '+(blob.size/1024/1024).toFixed(1)+' MB';$('exportResult').append(summary);
     const back=document.createElement('button');back.className='button subtle';back.textContent='編集に戻る';back.onclick=()=>$('exportDialog').close();$('exportResult').append(back);$('exportDialog').classList.add('export-complete');
     $('exportMessage').textContent='完成動画を再生して、動き・音・文字を確認してから保存してください。';
-  }catch(error){$('exportMessage').textContent=exportController.signal.aborted?'書き出しをキャンセルしました。':'書き出しできませんでした: '+error.message;}
-  finally{anchor.replaceWith(canvas);if(canvasStyle===null)canvas.removeAttribute('style');else canvas.setAttribute('style',canvasStyle);exportMonitor.hidden=true;busy=false;exportController=null;$('startExportBtn').disabled=false;$('closeExportBtn').disabled=false;refresh();}
+  }catch(error){$('exportMessage').textContent=exportController.signal.aborted?'書き出しをキャンセルしました。':'書き出しできませんでした: '+playbackMessage(error,'export');}
+  finally{await screenGuard.release();anchor.replaceWith(canvas);if(canvasStyle===null)canvas.removeAttribute('style');else canvas.setAttribute('style',canvasStyle);exportMonitor.hidden=true;busy=false;exportController=null;$('startExportBtn').disabled=false;$('closeExportBtn').disabled=false;refresh();}
 };
 function download(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
 function dataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});}
@@ -429,7 +475,11 @@ $('projectInput').onchange=async event=>{
     // Each imported source gets a fresh identity; an older autosave must never
     // reuse bytes from a different imported project that happens to share IDs.
     const remapped=new Map(loaded.map(a=>[a.id,uid()]));for(const a of loaded)a.id=remapped.get(a.id);for(const item of [...p.clips,...p.music])item.assetId=remapped.get(item.assetId);
-    remember();for(const a of loaded)assets.set(a.id,a);project={version:2,name:String(p.name).slice(0,120),aspect:p.aspect,clips:p.clips,texts:p.texts,music:p.music};selected=null;time=0;toast('プロジェクトを開きました');
+    remember();for(const a of loaded)assets.set(a.id,a);project={version:2,name:String(p.name).slice(0,120),aspect:p.aspect,clips:p.clips,texts:p.texts,music:p.music};selected=null;time=0;
+    // Opening a validated backup is an explicit project choice. Do not leave the
+    // old recovery prompt blocking autosave of the newly opened work.
+    recoveryPending=null;recoveryView.notice.hidden=true;recoveryFingerprint='';
+    toast('プロジェクトを開きました');
   }catch(error){for(const a of loaded)URL.revokeObjectURL(a.url);toast('開けませんでした: '+error.message);}
   finally{busy=false;refresh();}
 };
@@ -641,6 +691,7 @@ $('addMusicBtn').onclick=()=>{refreshMusic();musicDialog.showModal();};$('import
 $('localMusicInput').onchange=async e=>{const files=[...e.target.files];e.target.value='';for(const file of files){try{await audioAsset(file);try{await musicStore('put',file);}catch{toast('端末保存ができませんでした。素材一覧から今回の編集には使えます。');}}catch(error){toast(file.name+': '+error.message);}}renderMedia();refreshMusic();};
 
 const templateDialog=dialogShell('templateDialog','テンプレートでつくる','長さ・つなぎ・文字・BGMをまとめて配置。できあがった後は、自由に直せます。');
+templateDialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
 templateDialog.insertAdjacentHTML('beforeend','<div id="templateCards" class="template-cards"></div><label class="field"><span>最初に出すタイトル</span><input id="templateTitle" maxlength="100"></label><button id="templateFilesBtn" class="button full-width">動画・写真を選ぶ</button><input id="templateFiles" type="file" accept="video/*,image/*,.mov,.mp4" multiple hidden><p id="templateSources" class="inspector-note"></p><label class="field"><span>BGM</span><select id="templateMusic"><option value="preset">テンプレートのお手本BGM</option><option value="none">音楽なし</option></select></label><p class="inspector-note">選んだ順に最大12素材を使用。各素材の冒頭をテンプレートの長さで使います。自動でベストシーンを探す機能ではありません。今の編集は置き換わりますが「元に戻す」で戻せます。</p><button id="applyTemplateBtn" class="button primary full-width">この内容で動画をつくる</button><p id="templateStatus" role="status"></p>');
 let templateChoice=templates[0],templateSaved=[];
 for(const item of templates){const b=document.createElement('button');b.className='template-card';b.dataset.template=item.id;b.innerHTML='<span class="template-art art-'+item.id+'">'+({travel:'↗',short:'▶',diary:'☀'}[item.id])+'</span><strong>'+item.name+'</strong><small>'+item.tag+'</small><p>'+item.description+'</p>';b.onclick=()=>{templateChoice=item;$('templateTitle').value=item.title;for(const card of $('templateCards').children)card.setAttribute('aria-pressed',String(card===b));};$('templateCards').append(b);}
@@ -652,16 +703,22 @@ async function openTemplates(){
 }
 $('templateFilesBtn').onclick=()=>$('templateFiles').click();$('templateFiles').onchange=e=>$('templateSources').textContent=e.target.files.length+'個の素材をセットしました（最大12個）';
 $('applyTemplateBtn').onclick=async()=>{
-  if(busy)return;const button=$('applyTemplateBtn');button.disabled=true;const loaded=[];
+  if(busy)return;
+  const loaded=[],choice={...templateChoice},title=$('templateTitle').value.trim(),mode=$('templateMusic').value;
+  const files=[...$('templateFiles').files].slice(0,12),savedMusic=mode.startsWith('saved:')?templateSaved[Number(mode.split(':')[1])]?.file:null;
+  const controls=[...templateDialog.querySelectorAll('button,input,select')].map(control=>[control,control.disabled]);
+  busy=true;stop();for(const [control]of controls)control.disabled=true;
+  $('templateStatus').textContent='素材を準備しています…';
   try{
-    const files=[...$('templateFiles').files].slice(0,12);
-    if(files.length)for(const file of files){const asset=await inspectFile(file);if(asset.type==='audio'){URL.revokeObjectURL(asset.url);throw new Error('ここには動画・写真を選んでください。音楽はBGM欄から選べます。');}loaded.push(asset);}
+    if(files.length)for(const [index,file]of files.entries()){$('templateStatus').textContent='素材を準備中 '+(index+1)+' / '+files.length+'：'+file.name;const asset=await inspectFile(file);if(asset.type==='audio'){URL.revokeObjectURL(asset.url);throw new Error('ここには動画・写真を選んでください。音楽はBGM欄から選べます。');}loaded.push(asset);}
     const sources=files.length?loaded:[...assets.values()].filter(a=>a.type!=='audio').slice(0,12);
     if(!sources.length)throw new Error('まず「動画・写真を選ぶ」から素材をセットしてください。');
-    const mode=$('templateMusic').value,music=mode==='none'?null:await audioAsset(mode==='preset'?presetFile(templateChoice.music):templateSaved[Number(mode.split(':')[1])].file);
-    edit(()=>{for(const asset of loaded)assets.set(asset.id,asset);project.name=templateChoice.name;project.aspect=templateChoice.aspect;project.clips=sources.map(asset=>({...newClip(asset),out:Math.min(asset.type==='image'?templateChoice.seconds:asset.duration,templateChoice.seconds),fit:templateChoice.aspect==='9:16'?'cover':'contain',transition:{type:templateChoice.effect,duration:.35}}));project.texts=[];const total=duration();if($('templateTitle').value.trim())project.texts.push({id:uid(),text:$('templateTitle').value.trim(),start:0,end:Math.min(3,total),size:54,color:templateChoice.color,position:'bottom',background:true,fade:.25});project.music=music?fillMusic(music,total):[];time=0;selected={kind:'clips',id:project.clips[0].id};transitionSelection=null;});
+    const music=mode==='none'?null:await audioAsset(mode==='preset'?presetFile(choice.music):savedMusic);
+    // Only release the editor lock for the synchronous undoable commit. There
+    // are no awaits between unlocking and replacing the timeline.
+    busy=false;edit(()=>{for(const asset of loaded)assets.set(asset.id,asset);project.name=choice.name;project.aspect=choice.aspect;project.clips=sources.map(asset=>({...newClip(asset),out:Math.min(asset.type==='image'?choice.seconds:asset.duration,choice.seconds),fit:choice.aspect==='9:16'?'cover':'contain',transition:{type:choice.effect,duration:.35}}));project.texts=[];const total=duration();if(title)project.texts.push({id:uid(),text:title,start:0,end:Math.min(3,total),size:54,color:choice.color,position:'bottom',background:true,fade:.25});project.music=music?fillMusic(music,total):[];time=0;selected={kind:'clips',id:project.clips[0].id};transitionSelection=null;});
     templateDialog.close();$('fitTimelineBtn').click();toast('できあがり！ 再生してみよう。文字や順番はあとから変えられます。');
-  }catch(error){for(const asset of loaded)if(!assets.has(asset.id))URL.revokeObjectURL(asset.url);$('templateStatus').textContent=error.message;}finally{button.disabled=false;}
+  }catch(error){for(const asset of loaded)if(!assets.has(asset.id))URL.revokeObjectURL(asset.url);$('templateStatus').textContent=error.message;}finally{busy=false;for(const [control,disabled]of controls)control.disabled=disabled;refresh();}
 };
 for(const parent of [document.querySelector('.media-footer'),document.querySelector('.welcome-actions')]){const b=document.createElement('button');b.className='button template-launch';b.textContent='テンプレートでつくる';b.onclick=openTemplates;parent.prepend(b);}
 

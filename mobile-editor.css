@@ -3,6 +3,8 @@
 .mobile-history-controls{display:none}
 .mobile-context{display:none}
 #workspaceDivider{display:none}
+.timeline-clip{z-index:1}
+.timeline-clip.selected{z-index:4}
 .auto-source-list{display:grid;gap:6px;max-height:160px;overflow:auto;margin:8px 0 14px}
 .auto-source-list label{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px;background:var(--raised);border-radius:8px;overflow-wrap:anywhere}
 #autoEditDialog{max-height:90dvh;overflow:auto}

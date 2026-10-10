@@ -50,7 +50,7 @@ try{
   const next=await context.newPage();await next.goto('http://127.0.0.1:4173');await next.locator('#addMusicBtn').click();
   await next.locator('#savedMusicList').getByText('my-music',{exact:true}).waitFor();await next.locator('#savedMusicList').getByText('マイビート-130BPM',{exact:true}).waitFor();await next.close();
   await page.screenshot({path:'test-results/creative-desktop.png',fullPage:true});
-  await page.setViewportSize({width:390,height:844});await page.locator('#moreActionsBtn').click();await page.locator('#addMusicBtn').click();await page.locator('#openBeatBtn').click();
+  await page.setViewportSize({width:390,height:844});await page.locator('#addMusicBtn').click();await page.locator('#openBeatBtn').click();
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile page fits');
   assert(await page.locator('#beatGrid').evaluate(el=>el.scrollWidth>el.clientWidth),'beat grid is deliberately horizontally scrollable');
   await page.screenshot({path:'test-results/creative-beat-mobile.png',fullPage:true});

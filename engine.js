@@ -117,6 +117,13 @@ export class EditorEngine {
       visuals.push({ visual, clip, fade });
       if (!(visual instanceof HTMLImageElement)) {
         if (visual.error) throw new Error('動画の再生中にエラーが発生しました。素材の形式をご確認ください。');
+        // A lane can remain active across a dissolve or a skipped short cut.
+        // Reusing the same source does not mean it is still the same trim: align
+        // once on cut activation, without seeking an ordinary playing cut again.
+        this.visualAssignments ||= new Map();
+        const assigned = this.visualAssignments.get(key);
+        const cutChanged = assigned?.clipId !== clip.id || assigned?.assetId !== clip.assetId;
+        if (this.playing && cutChanged && !visual.paused) visual.pause();
         const sourceTime = clip.in + elapsed * clamp(clip.speed || 1, .25, 4);
         visual.playbackRate = clamp(clip.speed || 1, .25, 4);
         const crossfade = visible.length > 1 ? (index === 0 ? 1 - progress : progress) : 1;
@@ -125,6 +132,7 @@ export class EditorEngine {
         // into a seek/stall loop. Align at activation, then let it play normally.
         if (!this.playing || visual.paused) await this.seek(visual, sourceTime);
         if (!current()) return;
+        this.visualAssignments.set(key, { clipId: clip.id, assetId: clip.assetId });
         if (this.playing && visual.paused) await visual.play();
         if (!current()) { visual.pause(); return; }
       }
@@ -247,7 +255,7 @@ export class EditorEngine {
     };
     await tick();
   }
-  async export(project, { height = 720, mimeType = supportedFormats()[0], onProgress = () => {}, signal } = {}) {
+  async export(project, { height = 720, mimeType = supportedFormats()[0], onProgress = () => {}, onPrepare = () => {}, signal } = {}) {
     if (this.exporting) throw new Error('書き出し中です。');
     if (!project.clips.length || duration(project) <= 0) throw new Error('タイムラインに素材を追加してください。');
     if (!mimeType || !globalThis.MediaRecorder || !this.canvas.captureStream) throw new Error('このブラウザでは書き出せません。最新のSafariまたはChromeをお試しください。');
@@ -262,10 +270,12 @@ export class EditorEngine {
       await this.renderQueue.catch(() => {});
       // Prime only two decoder lanes, not every cut in a long montage.
       for (const [index,c] of project.clips.slice(0,2).entries()) {
+        onPrepare(`映像を準備中 ${index+1}/${Math.min(2,project.clips.length)}`);
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
         const key=`clip:lane:${index}`;const el = await this.element(c.assetId,key); this.node(el,key); await this.seek(el,c.in);
       }
       const audioKeys=musicLanes(project.music);
+      onPrepare('音楽と保存形式を準備しています…');
       for (const m of (project.music || []).filter(m=>m.start<=0&&m.out>m.in)) {
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
         const key=audioKeys.get(m.id);const el = await this.element(m.assetId,key); this.node(el,key); await this.seek(el,m.in);
@@ -297,16 +307,16 @@ export class EditorEngine {
           const now=performance.now();
           if(now-windowStart>=1500){
             const fps=renderedFrames*1000/(now-windowStart);
-            if(fps<15){stop(new Error('この端末では映像処理が追いつかず、滑らかに書き出せませんでした。720pを選び、ほかのアプリを閉じて再試行してください。'));return;}
+            if(fps<15){stop(new Error('映像処理が追いつかず書き出しを停止しました。'+(height>720?'720pを選ぶか、':'')+'色補正や切り替え効果を減らし、ほかのアプリを閉じて再試行してください。'));return;}
             windowStart=now;renderedFrames=0;
           }
           for(const [key,{el}]of this.media){
-            if(!(el instanceof HTMLVideoElement)||el.paused)continue;
+            if(!(el instanceof HTMLVideoElement)||el.paused){decoderSamples.delete(key);continue;}
             const frames=el.getVideoPlaybackQuality?.().totalVideoFrames;
             if(frames==null)continue;
             const previous=decoderSamples.get(key);
-            if(!previous||previous.frames!==frames)decoderSamples.set(key,{frames,at:now});
-            else if(now-previous.at>1000){stop(new Error('動画のフレーム更新が止まったため書き出しを中止しました。720pで再試行するか、素材をH.264のMP4に変換してください。'));return;}
+            if(!previous||previous.el!==el||previous.frames!==frames)decoderSamples.set(key,{el,frames,at:now});
+            else if(now-previous.at>1000){stop(new Error('動画のフレーム更新が止まったため書き出しを中止しました。'+(height>720?'720pで再試行するか、':'')+'素材をH.264のMP4に変換してお試しください。'));return;}
           }
           // captureStream(30) already samples canvas changes. Explicitly requesting
           // every rAF adds up to 60/120fps work on high-refresh phones.

@@ -7,7 +7,7 @@ try{
   await page.goto('http://127.0.0.1:4173');await page.locator('#welcomeDemo').click();
   await page.locator('.timeline-clip').nth(2).waitFor();
   await page.locator('#moreActionsBtn').click();await page.getByRole('button',{name:'素材一覧',exact:true}).click();await page.locator('#renameProjectBtn').click();await page.locator('#renameInput').fill('家族の一日');await page.locator('#confirmRenameBtn').click();await page.getByRole('button',{name:'素材パネルを閉じる'}).click();
-  await page.locator('#moreActionsBtn').click();await page.locator('#addTextBtn').click();
+  await page.locator('#addTextBtn').tap();
   await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='saved');
   const saved=await page.evaluate(async()=>{const {loadRecovery}=await import('./project-store.js');const s=await loadRecovery();return {revision:s.revision,name:s.project.name,clips:s.project.clips.length,texts:s.project.texts.length,files:s.assets.length};});
   assert.equal(saved.name,'家族の一日');assert.equal(saved.clips,3);assert.equal(saved.texts,1);assert.equal(saved.files,3);
@@ -32,7 +32,7 @@ try{
   });assert.match(oversized.message,/150MB/);assert(oversized.same,'oversized save retains previous successful snapshot');
   const other=await context.newPage();other.on('dialog',d=>d.accept());await other.goto('http://127.0.0.1:4173');await other.locator('#recoveryNotice').waitFor();
   await other.locator('#startFreshBtn').click();await other.locator('#welcomeDemo').click();await other.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='saved');
-  await page.locator('#moreActionsBtn').click();await page.locator('#addTextBtn').click();await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='error');
+  await page.locator('#addTextBtn').tap();await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='error');
   assert.match(await page.locator('#recoveryStatus').textContent(),/別のタブ/);
   await page.screenshot({path:'test-results/product-recovery-mobile.png',fullPage:true});
   assert.deepEqual(errors,[]);console.log('Recovery: source files and edits saved, reload restored, stale writes rejected, previous snapshot preserved, cross-tab conflict surfaced.');
