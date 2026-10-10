@@ -8,7 +8,7 @@ import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
 import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 import { loadRecovery, saveRecovery } from './project-store.js';
 import { recoveryUI } from './recovery-ui.js';
-import { installMobileEditor } from './mobile-editor.js?v=20261010-taskforce';
+import { installMobileEditor } from './mobile-editor.js?v=20261010-reference';
 import { keepScreenAwake, playbackMessage } from './export-support.js';
 import { selectionKey, selectedEntries, toggleTrackSelection, removeSelected } from './selection.js';
 import { textLooks, soundMixes, applyTextLook, applySoundMix } from './finishing.js';
@@ -16,6 +16,7 @@ import { reviewProject } from './project-review.js';
 
 const $ = id => document.getElementById(id);
 window.addEventListener('DOMContentLoaded',installMobileEditor,{once:true});
+document.addEventListener('clippo:layoutchange',()=>renderInspector());
 const assets = new Map();
 let project = { version: 2, name: '名称未設定のプロジェクト', aspect: '16:9', clips: [], texts: [], music: [] };
 let selected = null, time = 0, playing = false, busy = false, exportController = null, resultUrl = null;
@@ -322,6 +323,7 @@ function wireClipMove(button,item,kind,start,row,board){
 function updateTime() { $('scrub').value = time; $('timeDisplay').textContent = fmt(time) + ' / ' + fmt(duration()); const head = document.querySelector('.playhead'); if (head) head.style.left = (72 + time * timelineScale) + 'px'; }
 function renderInspector() {
   const target=$('inspector'),identity=(selected?.id||'')+':'+(transitionSelection||''),scroll=target.dataset.itemId===identity?target.scrollLeft:0;target.dataset.itemId=identity;
+  const current=selection();target.dataset.kind=selected?.kind||'';target.dataset.mode=current&&transitionSelection===current.id?'transition':selected?.kind||'';
   try{
   $('preview').classList.toggle('text-selected',selected?.kind==='texts');
   const panel = $('inspector'), item = selection(); panel.replaceChildren();
@@ -331,15 +333,14 @@ function renderInspector() {
   const heading = document.createElement('h3'); heading.className = 'inspector-heading'; heading.textContent = selected.kind === 'texts' ? 'テロップを編集' : assets.get(item.assetId)?.name || '素材を編集'; panel.append(heading);
   const field = (label, key, type, options = {}) => {
     const wrap = document.createElement('label'); wrap.className = 'field';wrap.dataset.key=key;
+    wrap.dataset.section=['in','out','start','end'].includes(key)?'timing':['brightness','contrast','saturation'].includes(key)?'color':['fade','fadeIn','fadeOut'].includes(key)?'fade':key==='speed'?'speed':key==='volume'?'sound':['fit','zoom','rotation','flipX'].includes(key)?'transform':'text';
     const caption = document.createElement('span'); caption.textContent = label; wrap.append(caption);
     const input = document.createElement(type === 'select' ? 'select' : type === 'textarea' ? 'textarea' : 'input');
-    input.setAttribute('aria-label',label);
+    input.setAttribute('aria-label',label);input.dataset.key=key;
     if (type === 'select') for (const [value, text] of options.choices) { const option = document.createElement('option'); option.value = value; option.textContent = text; input.append(option); }
-    else if (type !== 'textarea') input.type = ['volume','speed','size'].includes(key)&&innerWidth<=580?'range':type;
+    else if (type !== 'textarea') input.type = ['volume','speed','size','zoom','brightness','contrast','saturation','fade','fadeIn','fadeOut'].includes(key)&&innerWidth<=580?'range':type;
     for (const key of ['min', 'max', 'step']) if (options[key] != null) input[key] = options[key];
     if (type === 'checkbox') input.checked = !!item[key]; else {const value=item[key]??options.default??'';input.value=typeof value==='number'?Number(value.toFixed(3)):value;}
-    if(key==='speed'&&input.type==='range'){const show=()=>caption.textContent='速度 '+Number(input.value)+'倍';input.oninput=show;show();}
-    if(key==='size'&&input.type==='range'){const show=()=>caption.textContent='文字サイズ '+input.value;input.oninput=show;show();}
     input.onchange = () => {
       const value = type === 'checkbox' ? input.checked : type === 'number' || type === 'range' ? Number(input.value) : input.value;
       if (typeof value === 'number' && (!Number.isFinite(value) || (options.min != null && value < options.min) || (options.max != null && value > options.max))) { toast('範囲内の数値を入力してください。'); renderInspector(); return; }
@@ -369,6 +370,13 @@ function renderInspector() {
       const adjustmentKeys=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'];
       input.addEventListener('keydown',event=>{if(adjustmentKeys.includes(event.key))gesture=true;});
       input.addEventListener('keyup',event=>{if(adjustmentKeys.includes(event.key))finish();});show();
+    }else if(innerWidth<=580&&input.type==='range'){
+      const kind=selected.kind;
+      const show=()=>{
+        const value=Number(input.value);
+        caption.textContent=key==='speed'?'速度 '+value+'倍':key==='size'?'文字サイズ '+value:key==='zoom'?'拡大 '+value+'倍':['brightness','contrast','saturation'].includes(key)?({brightness:'明るさ',contrast:'コントラスト',saturation:'彩度'})[key]+' '+Math.round(value*100)+'%':label+' '+value+'秒';
+      };
+      bindInspectorRange(input,{min:options.min,max:options.max,canEdit:()=>!busy&&project[kind]?.includes(item),getValue:()=>item[key]??options.default??0,setValue:value=>item[key]=value,show,onLive:()=>{if(key==='speed'){time=Math.min(time,duration());$('scrub').max=duration();updateTime();}renderPreview();}});
     }
     wrap.append(input); panel.append(wrap);
   };
@@ -382,13 +390,13 @@ function renderInspector() {
     field('素材の開始（秒）', 'in', 'number', {min:0,max:max,step:.05}); field('素材の終了（秒）', 'out', 'number', {min:.05,max:max,step:.05});
     if (selected.kind === 'clips') {
       field('再生速度', 'speed', 'number', {min:.25,max:4,step:.25}); field('音量（1 = 100%）', 'volume', 'number', {min:0,max:2,step:.1});
-      quickPresets(panel,[['ゆっくり',.5],['ふつう',1],['早送り',2]],speed=>edit(()=>item.speed=speed));
+      quickPresets(panel,[['ゆっくり',.5],['ふつう',1],['早送り',2]],speed=>edit(()=>item.speed=speed),'speed');
       field('画面への収め方', 'fit', 'select', {choices:[['contain','全体を表示'],['cover','画面いっぱい']]});
       field('拡大','zoom','range',{min:1,max:3,step:.05,default:1});
       field('回転','rotation','select',{choices:[[0,'0°'],[90,'90°'],[180,'180°'],[270,'270°']],default:0});
       field('左右反転','flipX','checkbox');
       sectionTitle(panel,'カラー');
-      quickPresets(panel,[['標準',{brightness:1,contrast:1,saturation:1}],['鮮やか',{brightness:1.03,contrast:1.1,saturation:1.3}],['シネマ',{brightness:.95,contrast:1.2,saturation:.8}],['モノクロ',{brightness:1,contrast:1.1,saturation:0}]],values=>edit(()=>Object.assign(item,values)));
+      quickPresets(panel,[['標準',{brightness:1,contrast:1,saturation:1}],['鮮やか',{brightness:1.03,contrast:1.1,saturation:1.3}],['シネマ',{brightness:.95,contrast:1.2,saturation:.8}],['モノクロ',{brightness:1,contrast:1.1,saturation:0}]],values=>edit(()=>Object.assign(item,values)),'color');
       field('明るさ（1 = 標準）', 'brightness', 'number', {min:.2,max:2,step:.1});
       field('コントラスト','contrast','range',{min:0,max:2,step:.05,default:1});
       field('彩度','saturation','range',{min:0,max:2,step:.05,default:1});
@@ -405,7 +413,7 @@ function renderInspector() {
   // Keep common controls visible; disclose precision controls without removing them.
   if(selected.kind==='clips'){
     const children=[...panel.children],start=children.findIndex(el=>el.classList.contains('inspector-section-title'));
-    if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>advancedOpen=details.open;panel.append(details);}
+    if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>{if(innerWidth>580)advancedOpen=details.open;};panel.append(details);}
   }
   }finally{if(innerWidth<=580)target.scrollLeft=scroll;}
 }
@@ -549,8 +557,38 @@ document.addEventListener('keydown',event=>{
 window.addEventListener('beforeunload',event=>{if(project.clips.length||project.music.length){event.preventDefault();event.returnValue='';}});
 const zoom=document.createElement('label');zoom.className='timeline-zoom';zoom.innerHTML='表示倍率 <input type="range" min="1" max="140" value="60" aria-label="タイムラインの表示倍率">';zoom.querySelector('input').oninput=e=>{timelineScale=Number(e.target.value);renderTimeline();};document.querySelector('.timeline-heading').append(zoom);
 
-function sectionTitle(panel,title){const h=document.createElement('h4');h.className='inspector-section-title';h.textContent=title;panel.append(h);}
-function quickPresets(panel,choices,action){const row=document.createElement('div');row.className='quick-presets';for(const [label,value]of choices){const b=document.createElement('button');b.textContent=label;b.onclick=()=>action(value);row.append(b);}panel.append(row);}
+function sectionTitle(panel,title){const h=document.createElement('h4');h.className='inspector-section-title';h.dataset.section=title==='カラー'?'color':title==='フェード'?'fade':'';h.textContent=title;panel.append(h);}
+function quickPresets(panel,choices,action,group=''){const row=document.createElement('div');row.className='quick-presets';if(group)row.dataset.presetGroup=group;for(const [label,value]of choices){const b=document.createElement('button');b.textContent=label;b.onclick=()=>action(value);row.append(b);}panel.append(row);return row;}
+function bindInspectorRange(input,{min,max,canEdit,getValue,setValue,show=()=>{},onLive=()=>renderPreview()}){
+  // Keep the native control mounted throughout a gesture, with one undo entry.
+  let changed=false,pointerActive=false,keyActive=false,finishTimer;
+  const value=()=>input.value.trim()===''?NaN:Number(input.value);
+  const valid=number=>Number.isFinite(number)&&(min==null||number>=min)&&(max==null||number<=max);
+  const apply=()=>{
+    if(!canEdit())return;
+    const number=value();if(!valid(number))return;show();if(number===getValue())return;
+    if(!changed){remember();changed=true;$('undoBtn').disabled=false;$('redoBtn').disabled=true;}
+    setValue(number);onLive();scheduleRecovery();
+  };
+  const finalize=()=>{
+    finishTimer=null;
+    if(pointerActive||keyActive)return;
+    if(!canEdit()||!input.isConnected){changed=false;return;}
+    if(!valid(value())){input.value=getValue();show();toast('範囲内の数値を入力してください。');}
+    apply();if(changed){changed=false;time=Math.min(time,duration());refresh();}
+  };
+  const queueFinish=()=>{clearTimeout(finishTimer);finishTimer=setTimeout(finalize,0);};
+  const endPointer=()=>{document.removeEventListener('pointerup',endPointer);document.removeEventListener('pointercancel',endPointer);pointerActive=false;queueFinish();};
+  input.disabled=busy;
+  input.oninput=()=>{clearTimeout(finishTimer);apply();};
+  input.onchange=()=>{apply();if(!pointerActive&&!keyActive)queueFinish();};
+  input.onblur=()=>{keyActive=false;if(!pointerActive)queueFinish();};
+  input.addEventListener('pointerdown',()=>{clearTimeout(finishTimer);pointerActive=true;document.addEventListener('pointerup',endPointer,{once:true});document.addEventListener('pointercancel',endPointer,{once:true});});
+  const adjustmentKeys=['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'];
+  input.addEventListener('keydown',event=>{if(adjustmentKeys.includes(event.key)){clearTimeout(finishTimer);keyActive=true;}});
+  input.addEventListener('keyup',event=>{if(adjustmentKeys.includes(event.key)){keyActive=false;queueFinish();}});
+  show();
+}
 function finishingPresets(panel,kind,presets,apply){
   const row=document.createElement('div');row.className='finishing-presets';row.dataset.finishing=kind;
   const label=document.createElement('span');label.textContent=kind==='text'?'文字の見た目':'作品全体の音を仕上げる';row.append(label);
@@ -562,13 +600,16 @@ function renderTransitionInspector(panel,item){
   const index=project.clips.indexOf(item),config=item.transition||{type:'none',duration:.5};
   if(index>=project.clips.length-1){transitionSelection=null;renderInspector();return;}
   const options=[['none','カット'],['dissolve','クロスディゾルブ'],['black','暗転'],['white','白フラッシュ'],['wipe','ワイプ']];
+  const previewBoundary=()=>{if(innerWidth<=580){const entry=layoutClips(project.clips)[index];time=entry.end-entry.overlap/2;}};
   panel.innerHTML='<h3 class="inspector-heading">シーンをつなぐ</h3><p class="panel-summary">隣り合う映像と音を重ねて切り替えます。作品全体の長さは重なった分だけ短くなります。</p>';
   const presets=document.createElement('div');presets.className='transition-presets';
-  for(const [type,label]of options){const b=document.createElement('button');b.className=config.type===type?'active':'';b.innerHTML='<span class="effect-symbol effect-'+type+'">◧</span>'+label;b.onclick=()=>edit(()=>item.transition={type,duration:config.duration});presets.append(b);}panel.append(presets);
-  const field=document.createElement('label');field.className='field';field.innerHTML='<span>切り替え効果</span>';const select=document.createElement('select');select.setAttribute('aria-label','切り替え効果');for(const [value,label]of options){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}select.value=config.type;select.onchange=()=>edit(()=>item.transition={type:select.value,duration:config.duration});field.append(select);panel.append(field);
-  const length=document.createElement('label');length.className='field';length.innerHTML='<span>効果の長さ（秒）</span>';const input=document.createElement('input');input.type='number';input.setAttribute('aria-label','効果の長さ（秒）');input.min=.1;input.max=5;input.step=.1;input.value=config.duration;input.onchange=()=>{const value=Number(input.value);if(!Number.isFinite(value)||value<.1||value>5){toast('0.1〜5秒で指定してください。');return;}edit(()=>item.transition={type:config.type,duration:value});};length.append(input);panel.append(length);
-  const actual=transitionDuration(project.clips,index),note=document.createElement('p');note.className='inspector-note';note.textContent='実際の重なり: '+actual.toFixed(2)+'秒。短いクリップでは各素材の半分までに調整されます。';panel.append(note);
-  quickPresets(panel,[['効果の中央を見る',0],['クリップ調整に戻る',1]],action=>{if(action){transitionSelection=null;renderInspector();}else{const entry=layoutClips(project.clips)[index];stop();time=entry.end-entry.overlap/2;updateTime();renderPreview();}});
+  for(const [type,label]of options){const b=document.createElement('button');b.dataset.effect=type;b.className=config.type===type?'active':'';b.setAttribute('aria-pressed',String(config.type===type));b.disabled=busy;b.innerHTML='<span class="effect-symbol effect-preview effect-'+type+'" aria-hidden="true">◧</span><span class="effect-label">'+label+'</span>';b.onclick=()=>edit(()=>{item.transition={type,duration:item.transition?.duration??config.duration};previewBoundary();});presets.append(b);}panel.append(presets);
+  const field=document.createElement('label');field.className='field';field.dataset.key='transitionType';field.dataset.section='transition';field.innerHTML='<span>切り替え効果</span>';const select=document.createElement('select');select.dataset.key='transitionType';select.setAttribute('aria-label','切り替え効果');select.disabled=busy;for(const [value,label]of options){const o=document.createElement('option');o.value=value;o.textContent=label;select.append(o);}select.value=config.type;select.onchange=()=>edit(()=>item.transition={type:select.value,duration:item.transition?.duration??config.duration});field.append(select);panel.append(field);
+  const length=document.createElement('label');length.className='field';length.dataset.key='transitionDuration';length.dataset.section='transition';const caption=document.createElement('span');caption.textContent='効果の長さ（秒）';length.append(caption);const input=document.createElement('input');input.dataset.key='transitionDuration';input.type=innerWidth<=580?'range':'number';input.setAttribute('aria-label','効果の長さ（秒）');input.min=.1;input.max=5;input.step=.1;input.value=config.duration;input.disabled=busy;input.onchange=()=>{const value=Number(input.value);if(!Number.isFinite(value)||value<.1||value>5){toast('0.1〜5秒で指定してください。');return;}edit(()=>item.transition={type:item.transition?.type??config.type,duration:value});};length.append(input);panel.append(length);
+  const note=document.createElement('p');note.className='inspector-note transition-overlap';const updateNote=()=>{const actual=transitionDuration(project.clips,index);note.textContent='実際の重なり: '+actual.toFixed(2)+'秒。短いクリップでは各素材の半分までに調整されます。';if(innerWidth<=580)caption.textContent='長さ '+Number(input.value)+'秒'+(Math.abs(actual-Number(input.value))>.01?'（重なりは'+Number(actual.toFixed(2))+'秒）':'');};updateNote();panel.append(note);
+  if(innerWidth<=580)bindInspectorRange(input,{min:.1,max:5,canEdit:()=>!busy&&project.clips.includes(item),getValue:()=>item.transition?.duration??config.duration,setValue:value=>item.transition={type:item.transition?.type??config.type,duration:value},show:updateNote,onLive:()=>{previewBoundary();time=Math.min(time,duration());$('scrub').max=duration();updateTime();updateNote();renderPreview();}});
+  const applyAll=document.createElement('button');applyAll.id='applyAllTransitions';applyAll.className='button full-width apply-all-transitions';applyAll.textContent='すべての切れ目に適用';applyAll.disabled=busy||project.clips.length<2;applyAll.onclick=()=>edit(()=>{const settings=clone(item.transition??config);for(const clip of project.clips.slice(0,-1))clip.transition=clone(settings);});panel.append(applyAll);
+  const actions=quickPresets(panel,[['効果の中央を見る',0],['クリップ調整に戻る',1]],action=>{if(busy)return;if(action){transitionSelection=null;renderInspector();}else{const entry=layoutClips(project.clips)[index];stop();time=entry.end-entry.overlap/2;updateTime();renderPreview();}});actions.lastElementChild.classList.add('transition-return');
 }
 const selectionBar=document.createElement('div');selectionBar.className='selection-bar';selectionBar.innerHTML='<span id="selectionName" class="selection-name">クリップを選択して編集</span><div class="selection-actions"><button id="adjustBtn">調整</button><button id="copyBtn">コピー</button><button id="pasteBtn">貼り付け</button><button id="mergeBtn">切れ目を結合</button></div>';
 document.querySelector('.timeline-heading').before(selectionBar);

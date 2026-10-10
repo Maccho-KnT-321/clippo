@@ -19,8 +19,9 @@ try{
   const baseline=await measure();const handle=await divider.boundingBox(),preview=await page.locator('.viewer-panel').boundingBox();assert(Math.abs(handle.y+handle.height/2-preview.y-preview.height)<2,'the handle is on the preview/editor boundary');assert.equal(await page.locator('.timeline-clip').first().evaluate(e=>e.getBoundingClientRect().height),44,'compact clips keep a 44px touch height');
   await page.locator('#timeline').evaluate(e=>e.scrollLeft=140);const before=await measure();
   await dragBy(140);const enlarged=await measure();
-  assert(enlarged.preview>before.preview+120,'real touch expands the preview');
-  assert(enlarged.timelineTop>before.timelineTop+120);assert(enlarged.timeline<before.timeline-120);
+  assert(enlarged.preview>before.preview+40,'real touch expands the already-larger preview up to the safe edit-space limit');
+  const expansion=enlarged.preview-before.preview;
+  assert(Math.abs(enlarged.timelineTop-before.timelineTop-expansion)<2);assert(Math.abs(before.timeline-enlarged.timeline-expansion)<2);
   assert.equal(enlarged.previewTop,before.previewTop);assert.equal(enlarged.toolbarBottom,before.toolbarBottom);assert.equal(enlarged.pageY,0);assert.equal(enlarged.left,before.left);
   await dragBy(-100);const reduced=await measure();
   assert(reduced.preview<enlarged.preview-90);assert(reduced.timelineTop<enlarged.timelineTop-90,'shrinking moves the boundary upward, not the editor offscreen');

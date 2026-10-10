@@ -1,0 +1,1145 @@
+/* Clippo's mobile editing surface. Loaded after the shared desktop styles. */
+@media (max-width: 580px) {
+  body.mobile-reference {
+    --bg: #111113;
+    --panel: #1b1b1f;
+    --raised: #28282d;
+    --line: #303037;
+    --text: #f5f5f8;
+    --muted: #a1a1aa;
+    --accent: #63d4c5;
+    --mobile-dock-height: 152px;
+    background: var(--bg);
+  }
+
+  body.mobile-reference .app-shell,
+  body.mobile-reference .workspace {
+    min-width: 0;
+    background: var(--bg);
+  }
+
+  body.mobile-reference .topbar {
+    height: 52px;
+    min-height: 52px;
+    gap: 8px;
+    padding: 4px 10px;
+    border: 0;
+    background: #111113;
+  }
+
+  body.mobile-reference .brand {
+    gap: 6px;
+    font-size: 21px;
+    letter-spacing: -1px;
+  }
+
+  body.mobile-reference .brand-mark {
+    width: 24px;
+    height: 26px;
+    border-radius: 6px;
+    background: #d1f477;
+    color: #202819;
+  }
+
+  body.mobile-reference .brand-mark svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  body.mobile-reference .studio-label {
+    display: none;
+  }
+
+  body.mobile-reference .header-actions {
+    gap: 4px;
+    min-width: 0;
+  }
+
+  body.mobile-reference .header-actions .button {
+    min-height: 44px;
+    border-radius: 9px;
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
+  body.mobile-reference #saveProjectBtn {
+    min-width: 44px;
+    width: 44px;
+    padding: 0;
+    color: var(--text);
+  }
+
+  body.mobile-reference #exportBtn {
+    min-width: 76px;
+    gap: 5px;
+    background: #f0f0f3;
+    border-color: #f0f0f3;
+    color: #17171a;
+    white-space: nowrap;
+  }
+
+  body.mobile-reference #exportBtn svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  body.mobile-reference #quickExportQuality {
+    width: 65px;
+    min-width: 0;
+    height: 44px;
+    padding: 5px 3px 5px 8px;
+    border: 1px solid #424249;
+    border-radius: 9px;
+    background: #202025;
+    color: #f5f5f8;
+    font-size: 11px;
+  }
+
+  body.mobile-reference #helpBtn {
+    min-width: 32px !important;
+    width: 32px;
+    height: 44px !important;
+    margin: 0;
+    border: 0;
+    font-size: 14px;
+  }
+
+  body.mobile-reference .workflow-guide {
+    background: #202025;
+    border-color: var(--line);
+  }
+
+  body.mobile-reference .workflow-steps .current {
+    background: #2b3335;
+  }
+
+  body.mobile-reference .workspace,
+  body.mobile-reference.has-clips .workspace,
+  body.mobile-reference.has-selection .workspace {
+    --mobile-dock-reserve: 376px;
+    grid-template-rows: min(var(--mobile-preview-height, clamp(200px, 34dvh, 285px)), max(120px, calc(100% - var(--mobile-dock-reserve)))) minmax(0, 1fr) !important;
+  }
+
+  body.mobile-reference:not(.has-clips) .workspace {
+    grid-template-rows: min(clamp(270px, 48dvh, 350px), 58%) minmax(0, 1fr) !important;
+  }
+
+  body.mobile-reference.has-clips.preview-collapsed .workspace {
+    grid-template-rows: 90px minmax(0, 1fr) !important;
+  }
+
+  body.mobile-reference.preview-focused .workspace,
+  body.mobile-reference.has-clips.preview-focused .workspace,
+  body.mobile-reference.has-selection.preview-focused .workspace {
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  body.mobile-reference.preview-focused .timeline-panel {
+    display: none !important;
+  }
+
+  body.mobile-reference.preview-focused .preview-stage {
+    display: flex;
+  }
+
+  body.mobile-reference .viewer-panel {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    padding: 2px 10px 0;
+    border-bottom: 0;
+    background: #111113;
+  }
+
+  body.mobile-reference .viewer-heading {
+    min-height: 29px;
+    flex-shrink: 0;
+    gap: 5px;
+    margin-bottom: 3px;
+  }
+
+  body.mobile-reference .aspect-control {
+    gap: 5px;
+    color: #8e8e97;
+    font-size: 10px;
+  }
+
+  body.mobile-reference .aspect-control select {
+    padding: 3px 5px;
+    border-color: #303037;
+    background: #1e1e23;
+    font-size: 10px;
+  }
+
+  body.mobile-reference .preview-toggle {
+    min-height: 29px;
+    padding: 2px 4px;
+    color: #b5b5be;
+    font-size: 10px;
+  }
+
+  body.mobile-reference .preview-stage {
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #000;
+  }
+
+  body.mobile-reference .preview-empty {
+    background: radial-gradient(ellipse at 50% 20%, #303039, #17171b 72%);
+  }
+
+  body.mobile-reference .creation-start .button {
+    border-color: #424249;
+    background: #29292f;
+    color: #f5f5f8;
+  }
+
+  body.mobile-reference .creation-start .primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #142623;
+  }
+
+  body.mobile-reference .transport {
+    min-height: 44px;
+    flex-shrink: 0;
+    gap: 2px;
+    color: var(--text);
+  }
+
+  body.mobile-reference .transport .play-button {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    color: #f5f5f8;
+    background: transparent;
+  }
+
+  body.mobile-reference .play-button svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  body.mobile-reference .transport .frame-button {
+    width: 30px;
+    min-width: 30px;
+    height: 44px;
+    color: #ededf2;
+  }
+
+  body.mobile-reference .transport .time-display {
+    min-width: 0;
+    font-size: 10px;
+    letter-spacing: 0;
+    white-space: nowrap;
+    color: #c6c6cf;
+  }
+
+  body.mobile-reference .mobile-history-controls {
+    gap: 0;
+    margin-left: auto;
+  }
+
+  body.mobile-reference .mobile-history-controls button {
+    width: 32px;
+    min-width: 32px;
+    min-height: 44px;
+    height: 44px;
+  }
+
+  body.mobile-reference .mobile-history-controls svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  body.mobile-reference #previewFocusBtn {
+    width: 32px;
+    min-width: 32px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0;
+    color: #ededf2;
+  }
+
+  body.mobile-reference #previewFocusBtn svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  body.mobile-reference .scrub {
+    height: 8px;
+    min-height: 8px;
+    opacity: .7;
+  }
+
+  body.mobile-reference .timeline-panel {
+    min-height: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    background: #1b1b1f;
+    border: 0;
+  }
+
+  body.mobile-reference.has-clips #workspaceDivider {
+    width: 72px;
+    left: calc(50% - 36px);
+    height: 24px;
+    min-height: 24px;
+    top: -12px;
+    border: 1px solid #4b4b54;
+    border-radius: 12px;
+    background: #242429;
+  }
+
+  body.mobile-reference #workspaceDivider::after {
+    width: 32px;
+    left: calc(50% - 16px);
+    height: 3px;
+    background: #ababba;
+  }
+
+  body.mobile-reference #workspaceDivider.resizing {
+    border-color: var(--accent);
+    background: #2e3c3a;
+  }
+
+  body.mobile-reference .timeline-heading {
+    min-height: 44px;
+    height: 44px;
+    padding: 0 8px;
+    gap: 4px;
+    border-bottom: 1px solid #292930;
+  }
+
+  body.mobile-reference .timeline-heading h2 {
+    flex: 0 1 auto;
+    min-width: 0;
+    color: #9a9aa4;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  body.mobile-reference .timeline-zoom {
+    margin-left: auto;
+  }
+
+  body.mobile-reference .timeline-zoom input {
+    width: 48px;
+    min-height: 30px;
+    margin: 0;
+    opacity: .65;
+  }
+
+  body.mobile-reference #fitTimelineBtn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 3px;
+    color: #a7a7b2;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  body.mobile-reference .multi-select-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 5px;
+    color: #c4c4ce;
+    font-size: 10px;
+  }
+
+  body.mobile-reference .multi-select-toggle[aria-pressed=true] {
+    border-color: #3a6e68;
+    background: #253936;
+    color: var(--accent);
+  }
+
+  body.mobile-reference .mobile-move-controls {
+    gap: 0;
+    margin-left: 0;
+  }
+
+  body.mobile-reference .mobile-move-controls button {
+    width: 44px;
+    min-height: 44px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #ededf2;
+  }
+
+  body.mobile-reference .timeline {
+    --track-clip-height: 44px;
+    --track-lane-step: 52px;
+    --track-row-height: 58px;
+    min-height: 0 !important;
+    padding: 4px 8px 10px;
+    scrollbar-color: #51515d #1b1b1f;
+    background: #1b1b1f;
+  }
+
+  body.mobile-reference .track {
+    border-bottom-color: #28282e;
+  }
+
+  body.mobile-reference .track-label,
+  body.mobile-reference .track-select {
+    background: #1b1b1f;
+    color: #93939e;
+    font-size: 10px;
+  }
+
+  body.mobile-reference .track-select[aria-pressed=true],
+  body.mobile-reference .track-select[aria-pressed=mixed] {
+    color: var(--accent);
+  }
+
+  body.mobile-reference .track-content {
+    background-image: linear-gradient(to right, #ffffff03 1px, transparent 1px);
+  }
+
+  body.mobile-reference .timeline-ruler span {
+    color: #9b9ba6;
+    font-size: 10px !important;
+  }
+
+  body.mobile-reference .timeline-clip {
+    height: 44px;
+    min-height: 44px;
+    border-color: #768097;
+    border-radius: 4px;
+    background: #48566c;
+    color: #f2f4fa;
+    padding-top: 5px;
+    padding-bottom: 4px;
+  }
+
+  body.mobile-reference .timeline-clip .clip-name {
+    font-size: 10px;
+    font-weight: 500;
+  }
+
+  body.mobile-reference .timeline-clip small {
+    margin-top: 2px;
+    color: #e5e9f3;
+    font-size: 9px;
+    opacity: .65;
+  }
+
+  body.mobile-reference .timeline-clip img {
+    opacity: .8;
+  }
+
+  body.mobile-reference .audio-clip {
+    border-color: #8b7ca9;
+    background: #5e4e78;
+    color: #f1eafa;
+  }
+
+  body.mobile-reference .text-clip {
+    border-color: #a88daf;
+    background: #735a7b;
+    color: #f7edfa;
+  }
+
+  body.mobile-reference .clip-number {
+    min-width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    padding: 0 2px;
+    border-color: #ffffff44;
+    background: #15151b88;
+    color: #f4f4f8;
+    font-size: 9px;
+  }
+
+  body.mobile-reference .timeline-clip.selected {
+    border-color: #e5fff9;
+    border-radius: 4px;
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+    box-shadow: none;
+  }
+
+  body.mobile-reference .timeline-clip.selected .trim-handle {
+    width: 16px;
+    background: #edfffde8;
+  }
+
+  body.mobile-reference .timeline-clip.selected .trim-handle::after {
+    left: 6px;
+    width: 3px;
+    height: 16px;
+    top: calc(50% - 8px);
+    background: #273d39;
+  }
+
+  body.mobile-reference .playhead {
+    width: 2px;
+    background: #f1f1f6;
+  }
+
+  body.mobile-reference .playhead::before {
+    background: #f1f1f6;
+  }
+
+  body.mobile-reference .transition-button {
+    border-color: #65656f;
+    border-radius: 6px;
+    background: #24242a;
+    color: #eeeeF4;
+    box-shadow: none;
+  }
+
+  body.mobile-reference .transition-button.selected {
+    border-color: var(--accent);
+    background: #25443f;
+    color: var(--accent);
+  }
+
+  body.mobile-reference .empty-track-add {
+    border-color: #484853;
+    border-radius: 6px;
+    background: #28282f;
+    color: #bdbdc8;
+    font-size: 10px;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar {
+    min-height: 58px;
+    height: 58px;
+    padding: 4px 4px 5px;
+    border-top: 1px solid #33333a;
+    background: #1d1d22;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar button {
+    min-width: 44px;
+    min-height: 48px;
+    border: 0;
+    border-radius: 6px;
+    color: #eeeeF4;
+    background: transparent;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar button svg {
+    width: 21px;
+    height: 21px;
+    stroke-width: 1.6;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar button::after {
+    margin-top: 1px;
+    font-size: 10px;
+    color: inherit;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar #editorImportBtn {
+    border: 0;
+    color: #eeeeF4;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar #autoEditBtn::before {
+    color: #eeeeF4;
+  }
+
+  body.mobile-reference .mobile-editor-toolbar button:active:not(:disabled) {
+    color: var(--accent);
+    background: #2b3c39;
+    transform: none;
+  }
+
+  body.mobile-reference .inspector-panel,
+  body.mobile-reference[data-panel=settings] .inspector-panel {
+    position: static;
+    width: 100%;
+    min-height: 0;
+    max-height: none;
+    height: var(--mobile-dock-height);
+    flex: 0 0 var(--mobile-dock-height);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0 8px 4px;
+    overflow: hidden;
+    border: 0;
+    border-top: 1px solid #35353d;
+    border-radius: 0;
+    box-shadow: none;
+    background: #242429;
+  }
+
+  body.mobile-reference.has-selection .inspector-panel,
+  body.mobile-reference.has-selection[data-panel=settings] .inspector-panel {
+    display: flex !important;
+  }
+
+  body.mobile-reference .mobile-context:not([hidden]) {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    gap: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  body.mobile-reference .mobile-context-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 44px;
+    height: 44px;
+  }
+
+  body.mobile-reference .mobile-context-name {
+    display: block;
+    flex: 1;
+    max-width: none;
+    min-width: 0;
+    padding-left: 4px;
+    color: #d7d7df;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.mobile-reference #mobileDockBack,
+  body.mobile-reference #mobileDockDone {
+    display: grid;
+    place-items: center;
+    min-width: 44px;
+    width: 44px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #f5f5f8;
+  }
+
+  body.mobile-reference .mobile-context-apply-all {
+    flex: 0 0 auto;
+    min-height: 44px;
+    width: auto;
+    max-width: 96px;
+    padding: 4px 7px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #dedee7;
+    font-size: 10px;
+    line-height: 14px;
+  }
+
+  body.mobile-reference #mobileDockDone {
+    color: var(--accent);
+  }
+
+  body.mobile-reference #mobileDockBack svg,
+  body.mobile-reference #mobileDockDone svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  body.mobile-reference .mobile-context-actions {
+    display: flex;
+    gap: 3px;
+    min-height: 50px;
+    padding: 0 1px 2px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  body.mobile-reference .mobile-context-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.mobile-reference .mobile-context-actions button {
+    display: flex;
+    flex: 0 0 54px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 44px;
+    min-height: 48px;
+    padding: 2px 3px;
+    border: 0;
+    border-radius: 6px;
+    color: #d1d1db;
+    background: transparent;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  body.mobile-reference .mobile-context-actions button[aria-pressed=true],
+  body.mobile-reference .mobile-color-choices button.active {
+    background: #2b3436;
+    color: var(--accent);
+  }
+
+  body.mobile-reference .dock-tool-icon {
+    display: grid;
+    place-items: center;
+    height: 23px;
+    width: 26px;
+  }
+
+  body.mobile-reference .dock-tool-icon svg {
+    width: 22px;
+    height: 22px;
+    stroke-width: 1.5;
+  }
+
+  body.mobile-reference .mobile-color-choices {
+    justify-content: space-around;
+  }
+
+  body.mobile-reference .mobile-color-choices button {
+    flex: 1 0 54px;
+  }
+
+  body.mobile-reference #inspector {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-height: 0;
+    min-width: 0;
+    max-height: none;
+    width: 100%;
+    padding: 0 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-snap-type: none;
+    scrollbar-color: #5b5b65 transparent;
+  }
+
+  body.mobile-reference #inspector .advanced-controls {
+    display: contents;
+  }
+
+  body.mobile-reference #inspector .advanced-controls summary,
+  body.mobile-reference #inspector .inspector-heading,
+  body.mobile-reference #inspector .inspector-note,
+  body.mobile-reference #inspector .inspector-section-title,
+  body.mobile-reference #inspector .panel-summary,
+  body.mobile-reference #inspector .empty-inspector,
+  body.mobile-reference #inspector [data-dock-visible=false] {
+    display: none !important;
+  }
+
+  body.mobile-reference #inspector .field[data-dock-visible=true] {
+    display: grid;
+    flex: 0 0 auto;
+    order: 0;
+    gap: 2px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    scroll-snap-align: none;
+    background: transparent;
+  }
+
+  body.mobile-reference #inspector .field > span {
+    display: block;
+    min-height: 14px;
+    color: #bdbdc8;
+    font-size: 10px;
+    line-height: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  body.mobile-reference #inspector .field input,
+  body.mobile-reference #inspector .field select,
+  body.mobile-reference #inspector .field textarea {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px 9px;
+    border-color: #45454f;
+    border-radius: 6px;
+    background: #1b1b20;
+    color: #eeeef4;
+    font-size: 16px;
+  }
+
+  body.mobile-reference #inspector .field input[type=range] {
+    min-height: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    accent-color: var(--accent);
+  }
+
+  body.mobile-reference #inspector .field input[type=checkbox] {
+    width: 22px;
+    height: 22px;
+    min-height: 22px;
+    accent-color: var(--accent);
+  }
+
+  body.mobile-reference #inspector .field input[type=color] {
+    width: 100%;
+    height: 44px;
+    padding: 4px !important;
+  }
+
+  body.mobile-reference #inspector .field textarea {
+    height: 54px;
+    min-height: 54px;
+    resize: none;
+  }
+
+  body.mobile-reference #inspector .field:has(.dock-field-reset) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 7px;
+    row-gap: 2px;
+  }
+
+  body.mobile-reference #inspector .field:has(.dock-field-reset) > span {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-height: 14px;
+    font-size: 11px;
+  }
+
+  body.mobile-reference #inspector .dock-field-reset {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 60px;
+    min-height: 44px;
+    padding: 4px 7px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #bdbdc8;
+    font-size: 10px;
+  }
+
+  body.mobile-reference #inspector .field:has(.dock-field-reset) input[type=range] {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: center;
+    min-height: 36px;
+    height: 36px;
+  }
+
+  body.mobile-reference[data-dock-group=timing] #inspector,
+  body.mobile-reference[data-dock-group=fade] #inspector,
+  body.mobile-reference[data-dock-group=fit] #inspector {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    column-gap: 10px;
+  }
+
+  body.mobile-reference #inspector .quick-presets[data-dock-visible=true],
+  body.mobile-reference #inspector .finishing-presets[data-dock-visible=true] {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 5px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  body.mobile-reference #inspector .finishing-presets[data-dock-visible=true] {
+    flex-direction: column;
+  }
+
+  body.mobile-reference #inspector .finishing-presets > span,
+  body.mobile-reference #inspector .finishing-presets small {
+    display: none;
+  }
+
+  body.mobile-reference #inspector .finishing-presets > div {
+    gap: 5px;
+  }
+
+  body.mobile-reference #inspector .quick-presets button,
+  body.mobile-reference #inspector .finishing-presets button {
+    flex: 1;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px 6px;
+    border-color: #45454f;
+    border-radius: 6px;
+    background: #303037;
+    color: #e1e1e9;
+    font-size: 11px;
+  }
+
+  body.mobile-reference #inspector .quick-presets button.active,
+  body.mobile-reference #inspector .finishing-presets button[aria-pressed=true] {
+    border-color: var(--accent);
+    background: #2a3f3b;
+    color: var(--accent);
+  }
+
+  body.mobile-reference.mobile-dock-collapsed {
+    --mobile-dock-height: 96px;
+  }
+
+  body.mobile-reference.mobile-dock-collapsed #inspector {
+    display: none;
+  }
+
+  body.mobile-reference[data-dock-group=color]:not(.mobile-dock-collapsed) {
+    --mobile-dock-height: 160px;
+  }
+
+  body.mobile-reference[data-dock-group=transition]:not(.mobile-dock-collapsed) {
+    --mobile-dock-height: 192px;
+  }
+
+  body.mobile-reference[data-dock-group=transition] #inspector {
+    gap: 4px;
+    padding: 0 3px;
+  }
+
+  body.mobile-reference #inspector .transition-presets[data-dock-visible=true] {
+    display: flex;
+    flex: 0 0 78px;
+    gap: 7px;
+    width: 100%;
+    height: 78px;
+    min-height: 78px;
+    max-height: none;
+    margin: 0;
+    padding: 0 1px 3px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+  }
+
+  body.mobile-reference .transition-presets::-webkit-scrollbar {
+    display: none;
+  }
+
+  body.mobile-reference .transition-presets button {
+    flex: 0 0 76px;
+    min-width: 76px;
+    min-height: 72px;
+    gap: 5px;
+    padding: 3px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #d1d1db;
+    font-size: 10px;
+    line-height: 13px;
+    box-shadow: none;
+  }
+
+  body.mobile-reference .transition-presets button.active,
+  body.mobile-reference .transition-presets button[aria-pressed=true] {
+    border-color: var(--accent);
+    background: #293733;
+    color: var(--accent);
+    box-shadow: none;
+  }
+
+  body.mobile-reference .transition-presets .effect-label {
+    display: block;
+    width: 66px;
+    min-width: 0;
+    min-height: 0;
+    color: inherit;
+    font-size: 10px;
+    line-height: 13px;
+  }
+
+  body.mobile-reference .transition-presets .effect-preview {
+    position: relative;
+    display: block;
+    width: 66px;
+    min-width: 66px;
+    height: 43px;
+    min-height: 43px;
+    overflow: hidden;
+    border: 1px solid #ffffff26;
+    border-radius: 4px;
+    background: #607f99;
+    isolation: isolate;
+    font-size: 0;
+  }
+
+  body.mobile-reference .effect-preview::before,
+  body.mobile-reference .effect-preview::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 25% 24%, #faf0bb 0 5px, transparent 5.5px), linear-gradient(146deg, transparent 50%, #637a6d 50% 73%, transparent 73%), linear-gradient(35deg, transparent 40%, #344f54 40% 66%, transparent 66%), linear-gradient(#98b6c4 48%, #5a878e 49%);
+  }
+
+  body.mobile-reference .effect-preview::after {
+    background: radial-gradient(circle at 74% 27%, #ffe1a4 0 5px, transparent 5.5px), linear-gradient(155deg, transparent 64%, #34293f 64%), linear-gradient(20deg, transparent 62%, #564e66 62%), linear-gradient(#cb8e91 49%, #77779d 50% 68%, #505c85 69%);
+    clip-path: inset(0 0 0 50%);
+  }
+
+  body.mobile-reference .effect-preview.effect-dissolve::after {
+    clip-path: none;
+    mask-image: linear-gradient(to right, transparent, #000);
+  }
+
+  body.mobile-reference .effect-preview.effect-black {
+    background: #08080b;
+  }
+
+  body.mobile-reference .effect-preview.effect-black::before,
+  body.mobile-reference .effect-preview.effect-white::before {
+    mask-image: linear-gradient(to right, #000 0 15%, transparent 48%);
+  }
+
+  body.mobile-reference .effect-preview.effect-black::after,
+  body.mobile-reference .effect-preview.effect-white::after {
+    clip-path: none;
+    mask-image: linear-gradient(to right, transparent 52%, #000 85%);
+  }
+
+  body.mobile-reference .effect-preview.effect-white {
+    background: #f7f3f0;
+  }
+
+  body.mobile-reference .effect-preview.effect-wipe::after {
+    clip-path: polygon(70% 0, 100% 0, 100% 100%, 28% 100%);
+  }
+
+  body.mobile-reference .media-panel,
+  body.mobile-reference[data-panel=media] .media-panel {
+    border-color: #494952;
+    background: #242429;
+  }
+
+  body.mobile-reference .media-close,
+  body.mobile-reference .media-footer .button,
+  body.mobile-reference .media-footer .text-button {
+    min-height: 44px;
+  }
+
+  body.mobile-reference .import-button,
+  body.mobile-reference .import-activity {
+    border-color: #517b76;
+    background: #293936;
+    color: #d9f5f0;
+  }
+
+  body.mobile-reference .media-card:hover {
+    background: #303036;
+  }
+
+  body.mobile-reference dialog,
+  body.mobile-reference .clip-menu {
+    border-color: #555560;
+    background: #26262c;
+  }
+
+  body.mobile-reference .mobile-tools-grid button {
+    border-color: #45454f;
+    background: #303037;
+  }
+
+  body.mobile-reference .toast {
+    border-color: #517b76;
+    background: #2c3d39;
+    color: #edf9f7;
+  }
+
+  body.mobile-reference .recovery-notice {
+    border-color: #565661;
+    background: #29292f;
+    color: #f0f0f5;
+  }
+}
+
+@media (max-width: 360px) {
+  body.mobile-reference .topbar {
+    padding-inline: 6px;
+    gap: 5px;
+  }
+
+  body.mobile-reference .brand {
+    gap: 4px;
+    font-size: 19px;
+  }
+
+  body.mobile-reference .brand-mark {
+    width: 22px;
+    height: 24px;
+  }
+
+  body.mobile-reference .header-actions {
+    gap: 3px;
+  }
+
+  body.mobile-reference #quickExportQuality {
+    width: 60px;
+  }
+
+  body.mobile-reference #exportBtn {
+    min-width: 74px;
+    padding-inline: 7px;
+  }
+
+  body.mobile-reference .transport .frame-button,
+  body.mobile-reference .mobile-history-controls button,
+  body.mobile-reference #previewFocusBtn {
+    width: 28px;
+    min-width: 28px;
+  }
+
+  body.mobile-reference .transport .time-display {
+    font-size: 9px;
+  }
+
+  body.mobile-reference .timeline-heading h2 {
+    font-size: 9px;
+  }
+
+  body.mobile-reference .timeline-zoom input {
+    width: 35px;
+  }
+
+  body.mobile-reference .mobile-context-actions {
+    gap: 1px;
+  }
+}
+
+@media (max-width: 580px) and (max-height: 620px) {
+  body.mobile-reference[data-dock-group=transition]:not(.mobile-dock-collapsed) {
+    --mobile-dock-height: 184px;
+  }
+
+  body.mobile-reference .transition-presets .effect-preview {
+    height: 37px;
+    min-height: 37px;
+  }
+
+  body.mobile-reference #inspector .transition-presets[data-dock-visible=true] {
+    flex-basis: 70px;
+    height: 70px;
+    min-height: 70px;
+  }
+}

@@ -127,7 +127,7 @@ try {
   assert(!/00:04.0/.test(await touchClips.first().innerText()),'real touch handle trims clip');
   await touchPage.locator('.transition-button').first().tap();
   await touchPage.screenshot({path:'test-results/touch-before-effect.png',fullPage:true});
-  await touchPage.getByLabel('切り替え効果',{exact:true}).selectOption('dissolve');
+  await touchPage.locator('#inspector .transition-presets [data-effect=dissolve]').tap();
   assert.equal(await touchPage.locator('body').getAttribute('data-panel'),'edit','touch transition stays in the same editing workspace');
   await touchPage.screenshot({path:'test-results/polish-touch.png',fullPage:true});
   await mobile.close();

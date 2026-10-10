@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/serve.mjs",
     "test": "node --test tests/timeline.test.mjs tests/music-lanes.test.mjs tests/decoder-reuse.test.mjs tests/export-support.test.mjs tests/export-status.test.mjs tests/music-quality.test.mjs tests/finishing.test.mjs tests/story-planner.test.mjs tests/project-review.test.mjs tests/export-cancel.test.mjs && node tests/editor.test.mjs && node tests/polish.test.mjs && node tests/creative.test.mjs && node tests/import-layout.test.mjs && node tests/export-smooth.test.mjs && node tests/recovery.test.mjs && node tests/mobile-space.test.mjs && node tests/inline-mobile.test.mjs && npm run test:mobile && node tests/pending-project.test.mjs",
-    "test:mobile": "node tests/mobile-direct.test.mjs && node tests/mobile-context.test.mjs && node tests/mobile-selection.test.mjs && node tests/live-volume.test.mjs && node tests/trim-preview.test.mjs && node tests/auto-edit.test.mjs && node tests/decoder-budget.test.mjs && node tests/workspace-height.test.mjs && node tests/multi-select.test.mjs && node tests/selection-stability.test.mjs && node tests/taskforce-ui.test.mjs && node tests/mobile-resize.test.mjs"
+    "test:mobile": "node tests/mobile-direct.test.mjs && node tests/mobile-context.test.mjs && node tests/mobile-selection.test.mjs && node tests/live-volume.test.mjs && node tests/trim-preview.test.mjs && node tests/auto-edit.test.mjs && node tests/decoder-budget.test.mjs && node tests/workspace-height.test.mjs && node tests/multi-select.test.mjs && node tests/selection-stability.test.mjs && node tests/taskforce-ui.test.mjs && node tests/mobile-resize.test.mjs && node tests/reference-mobile.test.mjs"
   },
   "devDependencies": { "playwright": "^1.58.0" }
 }

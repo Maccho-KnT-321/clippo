@@ -54,6 +54,7 @@ try {
   // Text presets preserve words and timing, reset custom positioning, and
   // participate in the normal single-step undo/redo history.
   await page.locator('.text-clip').first().tap();
+  await page.locator('.mobile-context-actions [data-dock-group=style]').tap();
   for (const look of textLooks) {
     await page.locator(`#inspector .finishing-presets[data-finishing=text] button[data-look=${look.id}]`).click();
     const current = (await savedProject(page)).texts[0];
@@ -67,6 +68,7 @@ try {
   // Global sound choices have audible outer boundaries, not fade-outs between
   // every repeat. Source placement, words, and editing geometry stay intact.
   await page.locator('.audio-clip').first().tap();
+  await page.locator('.mobile-context-actions [data-dock-group=style]').tap();
   for (const mix of soundMixes) {
     await page.locator(`#inspector .finishing-presets[data-finishing=sound] button[data-mix=${mix.id}]`).click();
     const current = await savedProject(page), total = projectDuration(current);
@@ -98,6 +100,7 @@ try {
   // Warnings are actionable, not blocking confirmations. Selecting a warning
   // returns straight to the real timeline item so it can be corrected there.
   await page.locator('.text-clip').first().tap();
+  await page.locator('.mobile-context-actions [data-dock-group=timing]').tap();
   await page.getByLabel('表示終了（秒）', { exact: true }).fill('0.2');
   await page.getByLabel('表示終了（秒）', { exact: true }).dispatchEvent('change');
   const shortened = await savedProject(page); assert.equal(shortened.texts[0].end, .2);

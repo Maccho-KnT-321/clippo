@@ -27,7 +27,7 @@ try{
   await clips.nth(1).waitFor();
   await page.locator('#fitTimelineBtn').tap();await clips.first().tap();
   await page.locator('.transition-button').first().tap();
-  await page.getByLabel('切り替え効果',{exact:true}).selectOption('dissolve');
+  await page.locator('#inspector .transition-presets [data-effect=dissolve]').tap();
   await clips.first().tap();
   for(const name of ['映像と音のフェードイン（秒）','映像と音のフェードアウト（秒）']){
     await page.getByLabel(name,{exact:true}).evaluate(input=>{input.value='.6';input.dispatchEvent(new Event('change',{bubbles:true}));});
