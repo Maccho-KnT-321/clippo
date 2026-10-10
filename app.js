@@ -17,6 +17,7 @@ let project = { version: 2, name: '名称未設定のプロジェクト', aspect
 let selected = null, time = 0, playing = false, busy = false, exportController = null, resultUrl = null;
 let past = [], future = [], renderPending = false, renderAgain = false, toastTimer;
 let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUntil=0;
+let revealedSelection=null;
 let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
 let recoveryReady=false,recoveryPending=null,recoveryRevision=null,recoveryTimer,recoverySaving=false,recoveryFingerprint='',recoveryState='loading';
 const engine = new EditorEngine($('preview'), assets);
@@ -35,7 +36,15 @@ function stop() { engine.pause(); playing = false; $('playBtn').textContent = '�
 function remember() { stop(); past.push(clone(project)); if (past.length > 60) past.shift(); future = []; }
 function edit(fn) { if (busy) return; remember(); fn(); time = Math.min(time, duration()); refresh(); }
 function selection() { if (!selected) return null; return project[selected.kind].find(item => item.id === selected.id); }
-function select(kind, id) { selected = { kind, id }; transitionSelection=null; renderTimeline(); renderInspector(); }
+function select(kind, id) {
+  selected = { kind, id }; transitionSelection=null;
+  const item=project[kind].find(item=>item.id===id);
+  if(item&&innerWidth<=580){
+    const entry=kind==='clips'?layoutClips(project.clips).find(entry=>entry.clip.id===id):{start:item.start,end:kind==='texts'?item.end:item.start+item.out-item.in};
+    if(entry&&(time<entry.start||time>=entry.end)){stop();time=entry.start;updateTime();renderPreview();}
+  }
+  renderTimeline(); renderInspector();
+}
 function setPanel(name){ if(innerWidth<=580&&name==='settings')name='edit';document.body.dataset.panel=name; for(const tab of document.querySelectorAll('[data-panel]')){tab.classList.toggle('active',tab.dataset.panel===name);tab.setAttribute('aria-pressed',String(tab.dataset.panel===name));} }
 async function renderPreview() {
   if (renderPending) { renderAgain = true; return; }
@@ -191,6 +200,7 @@ function renderTimeline() {
         const transition=document.createElement('button');transition.className='transition-button'+(transitionSelection===item.id?' selected':'');transition.style.left=(entry.end-entry.overlap/2)*scale+'px';
         const type=item.transition?.type||'none';transition.textContent=type==='none'?'+':'◈';transition.title='切り替え効果';transition.setAttribute('aria-label','クリップ '+(index+1)+' の切り替え効果');
         transition.dataset.effect=type;
+        transition.dataset.nearSelection=String(selected?.kind==='clips'&&selected.id===item.id);
         let activated=false;
         const activate=e=>{e.stopPropagation();if(activated||busy)return;activated=true;stop();selected={kind:'clips',id:item.id};transitionSelection=item.id;renderTimeline();renderInspector();if(innerWidth<=580)setPanel('settings');};
         transition.onclick=activate;transition.onpointerup=e=>{if(e.pointerType==='touch'){e.preventDefault();activate(e);}};row.append(transition);
@@ -212,6 +222,11 @@ function renderTimeline() {
   const head=document.createElement('div');head.className='playhead';head.style.cssText='position:absolute;pointer-events:none;top:0;bottom:0;width:2px;left:'+(72+time*scale)+'px';board.append(head);
   board.onclick=e=>{if(busy||performance.now()<suppressClickUntil)return;stop();time=Math.max(0,Math.min(duration(),(e.clientX-board.getBoundingClientRect().left-72)/scale));updateTime();renderPreview();};
   target.append(board);target.scrollLeft=scroll;
+  if(innerWidth<=580&&selected?.id!==revealedSelection){
+    const chosen=board.querySelector('.timeline-clip.selected');
+    if(chosen){const clipRect=chosen.getBoundingClientRect(),view=target.getBoundingClientRect();if(clipRect.right<view.left+72||clipRect.left>view.right-30)target.scrollLeft+=clipRect.left-view.left-82;}
+  }
+  revealedSelection=selected?.id??null;
   const has=!!selection();for(const id of ['duplicateBtn','deleteBtn','copyBtn','adjustBtn'])if($(id))$(id).disabled=!has||busy;
   document.body.classList.toggle('has-selection',has);
   $('splitBtn').disabled=!project.clips.length||busy;$('moveLeftBtn').disabled=selected?.kind!=='clips'||busy;$('moveRightBtn').disabled=selected?.kind!=='clips'||busy;

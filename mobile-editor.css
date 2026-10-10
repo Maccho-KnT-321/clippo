@@ -1,6 +1,7 @@
 .mobile-editor-toolbar,.preview-toggle{display:none}
 .mobile-move-controls{display:none}
 .mobile-history-controls{display:none}
+.mobile-context{display:none}
 #workspaceDivider{display:none}
 .auto-source-list{display:grid;gap:6px;max-height:160px;overflow:auto;margin:8px 0 14px}
 .auto-source-list label{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px;background:var(--raised);border-radius:8px;overflow-wrap:anywhere}
@@ -52,6 +53,9 @@
   .transport .frame-button{width:32px;min-width:32px}
   .transport .time-display{font-size:10px}
   .timeline-clip.selected{box-shadow:0 0 0 2px var(--accent);border-radius:8px}
+  .transition-button[data-effect=none][data-near-selection=false]{visibility:hidden;pointer-events:none}
+  .timeline-clip.selected .trim-handle{width:18px;background:#d1f477bb;opacity:1}
+  .timeline-clip.selected .trim-handle::after{content:'';position:absolute;left:7px;top:calc(50% - 10px);width:3px;height:20px;border-radius:2px;background:#26341d}
   #inspector{scroll-snap-type:x proximity;scrollbar-width:thin}
   #inspector>.field{scroll-snap-align:start}
   .timeline-panel{background:#171b17}
@@ -92,4 +96,13 @@
   #inspector>.quick-presets,#inspector>.advanced-controls,#inspector>.transition-presets,#inspector>.button{flex:0 0 190px;margin:0;overflow:auto;max-height:100px}
   #inspector>.advanced-controls summary{font-size:12px}
   body[data-panel=media] .media-panel{bottom:0;max-height:60dvh}
+  body.has-selection .inspector-panel,body.has-selection[data-panel=settings] .inspector-panel{display:flex!important;align-items:center;gap:8px;padding:5px 8px}
+  .mobile-context:not([hidden]){display:flex;flex-direction:column;gap:3px;flex:0 0 100px;min-width:0;align-self:stretch;border-right:1px solid var(--line);padding-right:6px}
+  .mobile-context-name{font-size:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);max-width:94px}
+  .mobile-context-actions{display:flex;gap:2px}
+  .mobile-context-actions button{min-height:44px;min-width:44px;flex:1;border:0;border-radius:6px;background:#35412d;color:var(--accent);font-size:11px;padding:2px}
+  #inspector{flex:1;min-width:0}
+  .field-highlight{animation:field-glow .8s ease-out}
 }
+@keyframes field-glow{from{background:#d1f47733;border-radius:8px}to{background:transparent}}
+@media(prefers-reduced-motion:reduce){.field-highlight{animation:none}}

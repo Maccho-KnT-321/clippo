@@ -5,6 +5,20 @@ export function installMobileEditor(){
   const sheet=document.createElement('dialog');sheet.id='mobileToolsDialog';sheet.innerHTML='<div class="dialog-heading"><h2>編集ツール</h2><button class="icon-button" aria-label="編集ツールを閉じる">×</button></div><p class="dialog-description">クリップを選んでから、使いたい操作をタップ。</p><div class="mobile-tools-grid"></div>';document.body.append(sheet);sheet.querySelector('.icon-button').onclick=()=>sheet.close();
   const primary=['editorImportBtn','autoEditBtn','splitBtn','addTextBtn','addMusicBtn','deleteBtn','moreActionsBtn'];
   const inspector=document.querySelector('.inspector-panel'),inspectorAnchor=document.createComment('desktop inspector');inspector.before(inspectorAnchor);
+  const context=document.createElement('div');context.className='mobile-context';context.innerHTML='<span class="mobile-context-name"></span><div class="mobile-context-actions"></div>';inspector.prepend(context);
+  const controls=document.getElementById('inspector');
+  function updateContext(){
+    const fields=[['text','文字編集'],['volume','音量'],['speed','速度'],['position','配置'],['fadeIn','フェード']].filter(([key])=>controls.querySelector(`.field[data-key="${key}"]`)).slice(0,2);
+    context.hidden=!fields.length;
+    context.querySelector('.mobile-context-name').textContent=document.querySelector('.selection-name')?.textContent||'選択中';
+    context.querySelector('.mobile-context-actions').replaceChildren(...fields.map(([key,label])=>{const button=document.createElement('button');button.textContent=label;button.setAttribute('aria-label',label+'を調整');button.onclick=()=>{
+      const field=controls.querySelector(`.field[data-key="${key}"]`);if(!field)return;
+      const left=field.getBoundingClientRect().left-controls.getBoundingClientRect().left+controls.scrollLeft;
+      controls.scrollTo({left,behavior:'smooth'});field.classList.remove('field-highlight');void field.offsetWidth;field.classList.add('field-highlight');
+      if(key==='text')field.querySelector('textarea')?.focus({preventScroll:true});
+    };return button;}));
+  }
+  new MutationObserver(updateContext).observe(controls,{childList:true});updateContext();
   const library=document.createElement('button');library.textContent='素材一覧';library.onclick=()=>{sheet.close();document.body.dataset.panel='media';};sheet.querySelector('.mobile-tools-grid').append(library);
   const extras=['editorFilesImportBtn','adjustBtn','duplicateBtn','copyBtn','pasteBtn','mergeBtn','trimStartBtn','trimEndBtn','snapBtn'];
   const history=['undoBtn','redoBtn'];
