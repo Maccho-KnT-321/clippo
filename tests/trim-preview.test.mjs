@@ -55,7 +55,7 @@ try{
   const preview=()=>page.evaluate(()=>{const canvas=document.getElementById('preview');return [...canvas.getContext('2d').getImageData(canvas.width/2,canvas.height/2,1,1).data];});
 
   let handle=await clips.first().locator('.trim-out').boundingBox();
-  const startX=handle.x+handle.width/2,startY=handle.y+45;
+  const startX=handle.x+handle.width/2,startY=handle.y+handle.height/2;
   await touch('touchStart',startX,startY);
   await touch('touchMove',startX-8,startY);await touch('touchMove',startX-16,startY);
   await page.waitForFunction(()=>window.trimDraws.at(-1)?.clips.length===1&&window.trimSeeks.length>0);
@@ -79,7 +79,7 @@ try{
 
   await page.locator('#scrub').fill('0.7');await page.locator('#scrub').dispatchEvent('input');
   handle=await clips.first().locator('.trim-in').boundingBox();
-  const inX=handle.x+handle.width/2,inY=handle.y+45;
+  const inX=handle.x+handle.width/2,inY=handle.y+handle.height/2;
   await page.evaluate(()=>{window.trimDraws=[];window.trimSeeks=[];});
   await touch('touchStart',inX,inY);await touch('touchMove',inX+12,inY);
   await page.waitForFunction(()=>window.trimDraws.at(-1)?.clips.length===1&&window.trimSeeks.length>0);

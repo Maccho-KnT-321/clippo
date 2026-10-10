@@ -1,4 +1,5 @@
 import { projectDuration } from './timeline.js';
+import { presetMusicInfo } from './music-library.js';
 
 // A deterministic, local montage planner. No AI inference or network requests.
 export function planAutoEdit(sources,{seconds=30,style='bright'}={}){
@@ -6,7 +7,7 @@ export function planAutoEdit(sources,{seconds=30,style='bright'}={}){
   const target=Number(seconds);if(!Number.isFinite(target)||target<5||target>120)throw new Error('長さは5〜120秒にしてください。');
   const valid=sources.filter(a=>a.type==='image'||a.type==='video'&&Number.isFinite(a.duration)&&a.duration>0);
   if(!valid.length)throw new Error('使用できる動画・写真がありません。');
-  const soft=style==='calm',beat=60/(soft?90:110),shot=beat*(soft?8:4);
+  const soft=style==='calm',beat=60/(presetMusicInfo[style]||presetMusicInfo.bright).bpm,shot=beat*(soft?8:4);
   const slots=Math.max(valid.length,Math.ceil(target/shot));
   const picks=Array.from({length:Math.min(slots,60)},(_,i)=>valid[i%valid.length]);
   const make=length=>picks.map((a,i)=>{

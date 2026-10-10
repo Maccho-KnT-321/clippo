@@ -1,3 +1,10 @@
+import { addLoopVoice, encodeLoopWav } from './beat-maker.js';
+
+export const presetMusicInfo=Object.freeze({
+  bright:Object.freeze({name:'軽やかな一歩',bpm:110,bars:8,description:'明るいハイライト・おでかけ'}),
+  calm:Object.freeze({name:'静かな午後',bpm:90,bars:8,description:'日記・思い出・落ち着いた場面'})
+});
+
 const DB='clippo-local-music';
 async function database(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DB,1);request.onupgradeneeded=()=>request.result.createObjectStore('tracks',{keyPath:'key'});request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});}
 export async function musicStore(action,file){
@@ -12,19 +19,31 @@ export async function musicStore(action,file){
 
 // Original synthesized instrumental loops. No downloaded recordings or third-party samples.
 export function makePresetMusic(style='bright'){
-  const rate=22050,seconds=24,n=rate*seconds,buffer=new ArrayBuffer(44+n*2),view=new DataView(buffer);
-  const str=(s,o)=>{for(let i=0;i<s.length;i++)view.setUint8(o+i,s.charCodeAt(i));};
-  str('RIFF',0);view.setUint32(4,36+n*2,true);str('WAVEfmt ',8);view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,rate,true);view.setUint32(28,rate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);str('data',36);view.setUint32(40,n*2,true);
-  const notes=style==='calm'?[261.63,329.63,392,329.63,220,261.63,329.63,392]:[261.63,329.63,392,523.25,440,392,329.63,293.66];
-  const beat=style==='calm'?.75:.5;
-  for(let i=0;i<n;i++){
-    const t=i/rate,step=Math.floor(t/beat),phase=t%beat,f=notes[step%notes.length];
-    const envelope=Math.min(1,phase/.015)*Math.exp(-phase*(style==='calm'?3:7));
-    const melody=(Math.sin(2*Math.PI*f*t)+.22*Math.sin(4*Math.PI*f*t))*.15*envelope;
-    const bass=Math.sin(2*Math.PI*(step%8<4?130.815:110)*t)*.065;
-    const kick=style==='calm'?0:Math.sin(2*Math.PI*65*phase)*Math.exp(-phase*24)*.12;
-    const edge=Math.min(1,t/.05,(seconds-t)/.15);
-    view.setInt16(44+i*2,Math.max(-1,Math.min(1,(melody+bass+kick)*edge))*32767,true);
+  const info=presetMusicInfo[style]||presetMusicInfo.bright,soft=style==='calm';
+  const rate=22050,beat=60/info.bpm,seconds=beat*4*info.bars,samples=new Float32Array(Math.round(seconds*rate));
+  // Two passes through an original four-chord phrase. Every instrument is
+  // synthesized locally, with no recordings or third-party sample material.
+  const chords=[[261.63,329.63,392],[220,261.63,329.63],[174.61,220,261.63],[196,246.94,293.66]];
+  const voice=(start,length,fn)=>addLoopVoice(samples,start,length,rate,t=>fn(t)*Math.min(1,t/.006,(length-t)/.04));
+  let seed=8713;const noise=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/2147483648-1;};
+  for(let bar=0;bar<info.bars;bar++){
+    const chord=chords[bar%4],at=bar*4*beat,variation=bar>=4?1:0;
+    for(let pulse=0;pulse<4;pulse++){
+      const start=at+pulse*beat,bass=chord[0]/2;
+      voice(start,beat*.95,t=>(Math.sin(2*Math.PI*bass*t)+.12*Math.sin(4*Math.PI*bass*t))*.13*Math.exp(-t*3));
+      if(soft){
+        const f=chord[(pulse+variation)%3];
+        voice(start,1.5,t=>(Math.sin(2*Math.PI*f*t)+.16*Math.sin(4*Math.PI*f*t))*.15*Math.exp(-t*3.2));
+      }else{
+        if(pulse===0||pulse===2)voice(start,.22,t=>Math.sin(2*Math.PI*(48*t+5*(1-Math.exp(-t*35))))*.22*Math.exp(-t*22));
+        if(pulse===1||pulse===3)voice(start,.14,t=>noise()*.1*Math.exp(-t*35));
+        for(let half=0;half<2;half++){
+          const f=chord[(pulse+half+variation)%3]*(pulse===3&&variation?2:1);
+          voice(start+half*beat/2,.55,t=>(Math.sin(2*Math.PI*f*t)+.18*Math.sin(4*Math.PI*f*t))*.14*Math.exp(-t*8));
+          voice(start+half*beat/2,.055,t=>noise()*.035*Math.exp(-t*70));
+        }
+      }
+    }
   }
-  return new File([buffer],style==='calm'?'静かな午後.wav':'軽やかな一歩.wav',{type:'audio/wav',lastModified:0});
+  return encodeLoopWav(samples,rate,info.name+'.wav',0);
 }

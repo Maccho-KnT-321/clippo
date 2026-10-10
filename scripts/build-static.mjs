@@ -6,7 +6,8 @@ const assets = [
   'mobile-workspace.css', 'product.css', 'mobile-editor.css',
   'app.js', 'beat-maker.js', 'editing.js', 'engine.js',
   'import-media.js', 'mobile-editor.js', 'music-library.js',
-  'project-store.js', 'recovery-ui.js', 'templates.js', 'timeline.js', 'auto-edit.js', 'export-support.js'
+  'project-store.js', 'recovery-ui.js', 'templates.js', 'timeline.js', 'auto-edit.js', 'export-support.js',
+  'selection.js', 'story-planner.js', 'finishing.js', 'project-review.js'
 ];
 await mkdir(new URL('../dist/', import.meta.url), { recursive: true });
 await Promise.all(assets.map(name => copyFile(

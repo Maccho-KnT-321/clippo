@@ -8,13 +8,28 @@ export function supportedFormats() {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number(v) || 0));
 const envelope = (elapsed, duration, fadeIn = 0, fadeOut = 0) => Math.min(1, fadeIn > 0 ? Math.max(0, elapsed / fadeIn) : 1, fadeOut > 0 ? Math.max(0, (duration - elapsed) / fadeOut) : 1);
 
-function eventReady(element, event, timeout = 12000) {
+function cancelled() { return new DOMException('キャンセルしました', 'AbortError'); }
+function cancellable(promise, signal) {
+  if (!signal) return promise;
   return new Promise((resolve, reject) => {
+    const abort = () => { clean(); reject(cancelled()); };
+    const clean = () => signal.removeEventListener('abort', abort);
+    // Attach both handlers even if already cancelled: a late rejection from
+    // the original operation must never become an unhandled rejection.
+    Promise.resolve(promise).then(value => { clean(); resolve(value); }, error => { clean(); reject(error); });
+    if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
+  });
+}
+function eventReady(element, event, timeout = 12000, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(cancelled()); return; }
     const timer = setTimeout(() => finish(new Error('メディアの読み込みがタイムアウトしました。対応する形式か確認してください。')), timeout);
     const good = () => finish();
     const bad = () => finish(new Error('この端末ではメディアを再生できません。MP4（H.264/AAC）に変換してお試しください。'));
-    function finish(error) { clearTimeout(timer); element.removeEventListener(event, good); element.removeEventListener('error', bad); error ? reject(error) : resolve(); }
+    const abort = () => finish(cancelled());
+    function finish(error) { clearTimeout(timer); element.removeEventListener(event, good); element.removeEventListener('error', bad); signal?.removeEventListener('abort', abort); error ? reject(error) : resolve(); }
     element.addEventListener(event, good, { once: true }); element.addEventListener('error', bad, { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }
 
@@ -22,6 +37,7 @@ export class EditorEngine {
   constructor(canvas, assets) {
     this.canvas = canvas; this.ctx = canvas.getContext('2d', { alpha: false }); this.assets = assets;
     this.media = new Map(); this.nodes = new Map(); this.playing = false; this.generation = 0; this.renderQueue = Promise.resolve();
+    this.waitController = new AbortController();
   }
   mediaContainer() {
     if (!this.mediaHost) {
@@ -35,7 +51,7 @@ export class EditorEngine {
     if (this.mediaHost.parentNode !== parent) parent.append(this.mediaHost);
     return this.mediaHost;
   }
-  async audio() {
+  async audio(signal = this.waitController.signal) {
     if (!this.audioContext) {
       const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
       if (!Audio) throw new Error('このブラウザは音声編集に対応していません。');
@@ -47,16 +63,17 @@ export class EditorEngine {
       this.silentClock.connect(this.silentGain).connect(this.streamDestination); this.silentClock.start();
       this.speaker = this.audioContext.createGain(); this.speaker.connect(this.audioContext.destination);
     }
-    if (this.audioContext.state !== 'running') await this.audioContext.resume();
+    if (this.audioContext.state !== 'running') await cancellable(this.audioContext.resume(), signal);
     if (this.audioContext.state !== 'running') throw new Error('音声を有効にできませんでした。画面をタップして再試行してください。');
   }
-  async element(assetId, key) {
+  async element(assetId, key, signal = this.waitController.signal) {
+    if (signal?.aborted) throw cancelled();
     const asset = this.assets.get(assetId);
     if (!asset) throw new Error('素材が見つかりません。動画を読み込み直してください。');
     if(asset.type!=='image')this.mediaContainer();
     if (this.media.has(key)) {
       const entry = this.media.get(key);
-      if (entry.assetId === assetId) { await entry.ready; return entry.el; }
+      if (entry.assetId === assetId && !(entry.loading && entry.signal?.aborted)) { await cancellable(entry.ready, signal); return entry.el; }
       this.release(key);
     }
     const el = asset.type === 'image' ? new Image() : document.createElement(asset.type === 'audio' ? 'audio' : 'video');
@@ -65,10 +82,18 @@ export class EditorEngine {
       el.style.cssText='position:absolute;inset:0;width:4px;height:4px';
       this.mediaContainer().append(el);
     }
-    const ready = eventReady(el, asset.type === 'image' ? 'load' : 'loadeddata');
-    this.media.set(key, { el, assetId, ready }); el.src = asset.url;
-    if (asset.type !== 'image') el.load();
-    await ready; return el;
+    const ready = eventReady(el, asset.type === 'image' ? 'load' : 'loadeddata', 12000, signal);
+    const entry = { el, assetId, ready, signal, loading: true };
+    this.media.set(key, entry);
+    try {
+      el.src = asset.url;
+      if (asset.type !== 'image') el.load();
+      await ready; entry.loading = false; return el;
+    } catch (error) {
+      // A cancelled loader must not remove a newer element in the same lane.
+      if (this.media.get(key) === entry) this.release(key);
+      throw error;
+    }
   }
   node(el, key) {
     if (!this.audioContext || el instanceof HTMLImageElement) return;
@@ -79,15 +104,20 @@ export class EditorEngine {
     }
     return this.nodes.get(key).gain;
   }
-  async seek(el, value) {
+  async seek(el, value, signal = this.waitController.signal) {
+    if (signal?.aborted) throw cancelled();
     if (el instanceof HTMLImageElement) return;
     const t = Math.min(Math.max(0, value), Math.max(0, (el.duration || value + 1) - .001));
-    if (Math.abs(el.currentTime - t) < .025 && el.readyState >= 2) return;
-    const pending = eventReady(el, 'seeked'); el.currentTime = t; await pending;
+    if (Math.abs(el.currentTime - t) < .025 && el.readyState >= 2 && !el.seeking) return;
+    const pending = eventReady(el, 'seeked', 12000, signal); el.currentTime = t; await pending;
   }
   render(project, time) {
     const generation = this.generation;
-    const operation = () => generation === this.generation ? this.draw(project, time, generation) : undefined;
+    const operation = async () => {
+      if (generation !== this.generation) return;
+      try { await this.draw(project, time, generation); }
+      catch (error) { if (error.name !== 'AbortError' || generation === this.generation) throw error; }
+    };
     this.renderQueue = this.renderQueue.then(operation, operation);
     return this.renderQueue;
   }
@@ -229,7 +259,11 @@ export class EditorEngine {
     if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, w, h); }
     ctx.restore(); return layer;
   }
-  pause() { this.playing = false; this.generation++; cancelAnimationFrame(this.frame); for (const { el } of this.media.values()) el.pause?.(); }
+  pause() {
+    this.playing = false; this.generation++;
+    this.waitController.abort(); this.waitController = new AbortController();
+    cancelAnimationFrame(this.frame); for (const { el } of this.media.values()) el.pause?.();
+  }
   async play(project, time = 0, onTime = () => {}, onEnd = () => {}) {
     this.pause();
     const generation = this.generation;
@@ -262,28 +296,32 @@ export class EditorEngine {
     if (document.hidden) throw new Error('画面を表示した状態で書き出してください。');
     if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
     this.exporting = true; this.pause(); const oldWidth = this.canvas.width, oldHeight = this.canvas.height;
+    const preparationController = this.waitController, preparationSignal = preparationController.signal;
+    const cancelPreparation = () => preparationController.abort();
+    signal?.addEventListener('abort', cancelPreparation, { once: true });
     let stream, recorder, visibility, abort;
     try {
-      await this.audio();
+      if (signal?.aborted) throw cancelled();
+      await cancellable(this.audio(preparationSignal), preparationSignal);
       this.mediaContainer();
       // Let any cancelled preview seek settle before preparing export media.
-      await this.renderQueue.catch(() => {});
+      await cancellable(this.renderQueue.catch(() => {}), preparationSignal);
       // Prime only two decoder lanes, not every cut in a long montage.
       for (const [index,c] of project.clips.slice(0,2).entries()) {
         onPrepare(`映像を準備中 ${index+1}/${Math.min(2,project.clips.length)}`);
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
-        const key=`clip:lane:${index}`;const el = await this.element(c.assetId,key); this.node(el,key); await this.seek(el,c.in);
+        const key=`clip:lane:${index}`;const el = await cancellable(this.element(c.assetId,key,preparationSignal),preparationSignal); this.node(el,key); await cancellable(this.seek(el,c.in,preparationSignal),preparationSignal);
       }
       const audioKeys=musicLanes(project.music);
       onPrepare('音楽と保存形式を準備しています…');
       for (const m of (project.music || []).filter(m=>m.start<=0&&m.out>m.in)) {
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
-        const key=audioKeys.get(m.id);const el = await this.element(m.assetId,key); this.node(el,key); await this.seek(el,m.in);
+        const key=audioKeys.get(m.id);const el = await cancellable(this.element(m.assetId,key,preparationSignal),preparationSignal); this.node(el,key); await cancellable(this.seek(el,m.in,preparationSignal),preparationSignal);
       }
       const [aw, ah] = project.aspect.split(':').map(Number);
       const ratio=aw/ah;
       this.canvas.height = Math.round((ratio>=1?height:height/ratio) / 2) * 2; this.canvas.width = Math.round((ratio>=1?height*ratio:height) / 2) * 2;
-      await this.render(project, 0);
+      await cancellable(this.render(project, 0), preparationSignal);
       stream = this.canvas.captureStream(30);
       for (const track of this.streamDestination.stream.getAudioTracks()) stream.addTrack(track.clone());
       recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: Math.max(3500000, height * height * 8), audioBitsPerSecond: 192000 });
@@ -328,6 +366,8 @@ export class EditorEngine {
       onProgress(1); return blob;
     } finally {
       this.pause(); document.removeEventListener('visibilitychange', visibility); signal?.removeEventListener('abort', abort);
+      signal?.removeEventListener('abort', cancelPreparation);
+      if (signal?.aborted) for (const key of this.media.keys()) this.release(key);
       if (recorder?.state !== 'inactive' && recorder) recorder.stop();
       stream?.getTracks().forEach(track => track.stop());
       this.canvas.width = oldWidth; this.canvas.height = oldHeight; this.exporting = false;
@@ -337,7 +377,7 @@ export class EditorEngine {
     const entry = this.media.get(key), node = this.nodes.get(key);
     entry?.el.pause?.();
     node?.source.disconnect(); node?.gain.disconnect();
-    if (entry) { entry.el.removeAttribute('src'); entry.el.load?.(); entry.el.remove(); }
+    if (entry) { entry.el.removeAttribute?.('src'); entry.el.load?.(); entry.el.remove?.(); }
     this.nodes.delete(key); this.media.delete(key);
   }
   dispose() { this.pause(); for (const key of this.media.keys()) this.release(key); this.mediaHost?.remove(); this.silentClock?.stop(); this.silentGain?.disconnect(); this.audioContext?.close(); }
