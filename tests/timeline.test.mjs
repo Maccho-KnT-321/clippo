@@ -43,8 +43,8 @@ test('both overlapping sources advance with their own trim and speed, with linea
   const clips = [{ ...clip('a', 2, { type: 'dissolve', duration: .5 }), speed: 2 }, { ...clip('b', 8), in: 4, speed: 2 }];
   await engine.render({ clips, texts: [], music: [] }, .75);
   assert.deepEqual(positions, [['a', 1.5], ['b', 4.5]]);
-  assert.equal(gains.get('clip:a').gain.value, .5);
-  assert.equal(gains.get('clip:b').gain.value, .5);
+  assert.equal(gains.get('clip:lane:0').gain.value, .5);
+  assert.equal(gains.get('clip:lane:1').gain.value, .5);
 });
 
 test('pause while audio activation is pending cannot restart playback', async () => {

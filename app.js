@@ -281,10 +281,12 @@ function renderInspector() {
     const input = document.createElement(type === 'select' ? 'select' : type === 'textarea' ? 'textarea' : 'input');
     input.setAttribute('aria-label',label);
     if (type === 'select') for (const [value, text] of options.choices) { const option = document.createElement('option'); option.value = value; option.textContent = text; input.append(option); }
-    else if (type !== 'textarea') input.type = key==='volume'&&innerWidth<=580?'range':type;
+    else if (type !== 'textarea') input.type = ['volume','speed','size'].includes(key)&&innerWidth<=580?'range':type;
     for (const key of ['min', 'max', 'step']) if (options[key] != null) input[key] = options[key];
     if (type === 'checkbox') input.checked = !!item[key]; else {const value=item[key]??options.default??'';input.value=typeof value==='number'?Number(value.toFixed(3)):value;}
     if(key==='volume'&&input.type==='range'){const show=()=>caption.textContent='音量 '+Math.round(Number(input.value)*100)+'%';input.oninput=show;show();}
+    if(key==='speed'&&input.type==='range'){const show=()=>caption.textContent='速度 '+Number(input.value)+'倍';input.oninput=show;show();}
+    if(key==='size'&&input.type==='range'){const show=()=>caption.textContent='文字サイズ '+input.value;input.oninput=show;show();}
     input.onchange = () => {
       const value = type === 'checkbox' ? input.checked : type === 'number' || type === 'range' ? Number(input.value) : input.value;
       if (typeof value === 'number' && (!Number.isFinite(value) || (options.min != null && value < options.min) || (options.max != null && value > options.max))) { toast('範囲内の数値を入力してください。'); renderInspector(); return; }

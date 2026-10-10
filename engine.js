@@ -1,5 +1,5 @@
 // Browser-native compositor. Exports run in real time and require a visible tab.
-import { layoutClips, projectDuration as duration } from './timeline.js';
+import { layoutClips, musicLanes, projectDuration as duration } from './timeline.js';
 export function supportedFormats() {
   if (!globalThis.MediaRecorder) return [];
   return ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].filter(t => MediaRecorder.isTypeSupported(t));
@@ -96,7 +96,8 @@ export class EditorEngine {
     // Two alternating decoder lanes cover both ordinary cuts and dissolves.
     // Timeline clip IDs must not each allocate their own video decoder.
     const clipKey = clip => `clip:lane:${project.clips.indexOf(clip)%2}`;
-    const musicKey = music => `music:asset:${music.assetId}`;
+    const audioKeys=musicLanes(project.music);
+    const musicKey = music => audioKeys.get(music.id);
     const retained = new Set(['clip:lane:0','clip:lane:1',...(project.music||[]).filter(m=>time>=m.start&&time<m.start+m.out-m.in).map(musicKey)]);
     for (const key of this.media.keys()) if (!retained.has(key)) this.release(key);
     const layout = layoutClips(project.clips);
@@ -264,9 +265,10 @@ export class EditorEngine {
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
         const key=`clip:lane:${index}`;const el = await this.element(c.assetId,key); this.node(el,key); await this.seek(el,c.in);
       }
+      const audioKeys=musicLanes(project.music);
       for (const m of (project.music || []).filter(m=>m.start<=0&&m.out>m.in)) {
         if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
-        const key=`music:asset:${m.assetId}`;const el = await this.element(m.assetId,key); this.node(el,key); await this.seek(el,m.in);
+        const key=audioKeys.get(m.id);const el = await this.element(m.assetId,key); this.node(el,key); await this.seek(el,m.in);
       }
       const [aw, ah] = project.aspect.split(':').map(Number);
       const ratio=aw/ah;

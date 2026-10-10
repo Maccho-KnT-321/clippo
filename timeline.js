@@ -18,3 +18,13 @@ export function layoutClips(clips) {
   });
 }
 export function projectDuration(project) { return layoutClips(project.clips || []).at(-1)?.end || 0; }
+
+// Disjoint BGM segments reuse a decoder; simultaneous segments need separate lanes.
+export function musicLanes(music=[]){
+  const ends=[],keys=new Map();
+  for(const item of [...music].sort((a,b)=>a.start-b.start)){
+    let lane=ends.findIndex(end=>end<=item.start);if(lane<0)lane=ends.length;
+    ends[lane]=item.start+Math.max(0,item.out-item.in);keys.set(item.id,`music:lane:${lane}`);
+  }
+  return keys;
+}
