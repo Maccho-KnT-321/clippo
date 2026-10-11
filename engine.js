@@ -191,7 +191,8 @@ export class EditorEngine {
     ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, w, h);
     if (visuals.length === 1) {
       const {visual,clip,fade}=visuals[0];
-      const neutral=!(Number(clip.rotation)||0)&&!clip.flipX&&(clip.zoom??1)===1&&(clip.brightness??1)===1&&(clip.contrast??1)===1&&(clip.saturation??1)===1;
+      const originalColor=!this.exporting&&this.previewColorBypassId===clip.id;
+      const neutral=!(Number(clip.rotation)||0)&&!clip.flipX&&(clip.zoom??1)===1&&(originalColor||(clip.brightness??1)===1&&(clip.contrast??1)===1&&(clip.saturation??1)===1);
       if(neutral){
         const vw=visual.videoWidth||visual.naturalWidth,vh=visual.videoHeight||visual.naturalHeight;
         if(!vw||!vh)throw new Error('映像フレームを読み込めません。');
@@ -241,7 +242,8 @@ export class EditorEngine {
     const rotation = ((Number(clip.rotation) || 0) % 360 + 360) % 360, sideways = rotation === 90 || rotation === 270;
     const rw = sideways ? vh : vw, rh = sideways ? vw : vh;
     const scale = (clip.fit === 'cover' ? Math.max(w / rw, h / rh) : Math.min(w / rw, h / rh)) * clamp(clip.zoom ?? 1, 1, 3);
-    const brightness = clamp(clip.brightness ?? 1, 0, 2), contrast = clamp(clip.contrast ?? 1, 0, 2), saturation = clamp(clip.saturation ?? 1, 0, 2);
+    const originalColor=!this.exporting&&this.previewColorBypassId===clip.id;
+    const brightness = originalColor?1:clamp(clip.brightness ?? 1, 0, 2), contrast = originalColor?1:clamp(clip.contrast ?? 1, 0, 2), saturation = originalColor?1:clamp(clip.saturation ?? 1, 0, 2);
     ctx.save(); ctx.translate(w / 2, h / 2); ctx.rotate(rotation * Math.PI / 180); ctx.scale(clip.flipX ? -1 : 1, 1);
     if ('filter' in ctx && (brightness !== 1 || contrast !== 1 || saturation !== 1)) ctx.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
     ctx.drawImage(visual, -vw * scale / 2, -vh * scale / 2, vw * scale, vh * scale); ctx.restore();
@@ -295,7 +297,7 @@ export class EditorEngine {
     if (!mimeType || !globalThis.MediaRecorder || !this.canvas.captureStream) throw new Error('このブラウザでは書き出せません。最新のSafariまたはChromeをお試しください。');
     if (document.hidden) throw new Error('画面を表示した状態で書き出してください。');
     if (signal?.aborted) throw new DOMException('キャンセルしました', 'AbortError');
-    this.exporting = true; this.pause(); const oldWidth = this.canvas.width, oldHeight = this.canvas.height;
+    this.previewColorBypassId=null;this.exporting = true; this.pause(); const oldWidth = this.canvas.width, oldHeight = this.canvas.height;
     const preparationController = this.waitController, preparationSignal = preparationController.signal;
     const cancelPreparation = () => preparationController.abort();
     signal?.addEventListener('abort', cancelPreparation, { once: true });

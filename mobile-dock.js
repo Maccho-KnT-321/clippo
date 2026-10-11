@@ -13,6 +13,9 @@ const paths={
   fade:'M4 18l16-12 M4 18h16V6 M8 15v3 M12 12v6 M16 9v9',
   transition:'M4 5h16v14H4z M9 8l6 4-6 4 M12 5v14',
   details:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6',
+  zoom:'M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M15 15l6 6 M7 10h6 M10 7v6',
+  rotation:'M4 8a9 9 0 1 1-1 7 M4 3v5h5',flipX:'M12 3v18 M9 6L3 18h6z M15 6l6 12h-6z',
+  background:'M4 4h16v16H4z M8 8h8 M12 8v9 M10 17h4',compare:'M12 3v18 M8 4H3v16h5 M16 4h5v16h-5',
   back:'M15 5l-7 7 7 7',done:'M5 12l4 4L19 6',filters:'M4 4h16v16H4z M4 16l6-6 4 4 3-3 3 3 M15 7h1'
 };
 export const dockIcon=name=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.details}"/></svg>`;
@@ -24,10 +27,11 @@ const groups={
 const defaults={clips:'volume',texts:'text',music:'volume'};
 
 export function installMobileDock({controls,context,media}){
-  context.innerHTML=`<div class="mobile-context-header"><button id="mobileDockBack" type="button" aria-label="編集ツールに戻る">${dockIcon('back')}</button><span class="mobile-context-name"></span><button id="mobileDockDone" type="button" aria-label="調整欄を閉じる">${dockIcon('done')}</button></div><div class="mobile-context-actions" aria-label="素材の編集ツール"></div>`;
+  context.innerHTML=`<div class="mobile-context-header"><button id="mobileDockBack" type="button" aria-label="編集ツールに戻る">${dockIcon('back')}</button><span class="mobile-context-name"></span><button id="mobileColorCompare" type="button" aria-label="長押しで元の色を見る" aria-pressed="false">${dockIcon('compare')}<span>比較</span></button><button id="mobileDockDone" type="button" aria-label="調整欄を閉じる">${dockIcon('done')}</button></div><div class="mobile-context-actions" aria-label="素材の編集ツール"></div>`;
   const actions=context.querySelector('.mobile-context-actions'),name=context.querySelector('.mobile-context-name');
-  const remembered=new Map(),detailsOpen=new WeakMap();
-  let group='',colorKey='brightness',lastIdentity='',lastKind='',focus=null,movedApplyAll=null,leavingByKeyboard=false;
+  const remembered=new Map(),detailsOpen=new WeakMap(),subKeys=new Map(),rowScroll=new Map();
+  const compare=context.querySelector('#mobileColorCompare');
+  let group='',colorKey='brightness',lastIdentity='',lastKind='',lastView='',focus=null,movedApplyAll=null,leavingByKeyboard=false,movedFields=[];
   const nativeField=key=>controls.querySelector(`.field[data-key="${key}"]`);
   const nativeInput=key=>nativeField(key)?.querySelector('input,select,textarea');
   function captureFocus(){
@@ -41,11 +45,31 @@ export function installMobileDock({controls,context,media}){
   document.addEventListener('focusin',event=>{if(!controls.contains(event.target))focus=null;});
   document.addEventListener('pointerdown',event=>{if(!controls.contains(event.target))focus=null;},true);
   function choose(next,{focusText=false}={}){
-    focus=null;group=next;remembered.set(controls.dataset.kind,next);document.body.classList.remove('mobile-dock-collapsed');arrange();
+    endCompare();focus=null;group=next;remembered.set(controls.dataset.kind,next);document.body.classList.remove('mobile-dock-collapsed');arrange();
     if(focusText)nativeInput('text')?.focus({preventScroll:true});
   }
+  function chooseKey(key){endCompare();focus=null;subKeys.set(controls.dataset.kind+':'+group,key);document.body.classList.remove('mobile-dock-collapsed');arrange();}
+  document.addEventListener('clippo:newtext',()=>{if(media.matches&&controls.dataset.kind==='texts')choose('text',{focusText:true});});
+  function compareState(active){compare.setAttribute('aria-pressed',String(active));const badge=document.getElementById('colorCompareBadge');if(badge)badge.hidden=!active;}
+  function endCompare(){if(compare.getAttribute('aria-pressed')==='true')document.dispatchEvent(new CustomEvent('clippo:colorcompare',{detail:{active:false}}));compareState(false);}
+  function startCompare(){
+    if(compare.disabled||compare.hidden)return;
+    const detail={active:true,accepted:false};document.dispatchEvent(new CustomEvent('clippo:colorcompare',{detail}));compareState(detail.accepted);
+  }
+  compare.onpointerdown=event=>{if(event.button!==0)return;event.preventDefault();startCompare();try{compare.setPointerCapture(event.pointerId);}catch{/* Synthetic/assistive events may not own a pointer. */}};
+  compare.onpointerup=compare.onpointercancel=compare.onlostpointercapture=endCompare;
+  compare.onkeydown=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();event.stopPropagation();if(!event.repeat)startCompare();}else if(event.key==='Escape')endCompare();};
+  compare.onkeyup=event=>{if([' ','Enter'].includes(event.key)){event.preventDefault();event.stopPropagation();endCompare();}};
+  compare.onclick=event=>{if(event.detail===0){if(compare.getAttribute('aria-pressed')==='true')endCompare();else startCompare();}};
+  compare.oncontextmenu=event=>event.preventDefault();compare.onblur=endCompare;
+  document.addEventListener('clippo:compare-ended',()=>compareState(false));
+  actions.addEventListener('scroll',()=>{if(actions.dataset.rowKey)rowScroll.set(actions.dataset.rowKey,actions.scrollLeft);updateRowEdges();},{passive:true});
+  function updateRowEdges(){actions.classList.toggle('can-scroll-start',actions.scrollLeft>2);actions.classList.toggle('can-scroll-end',actions.scrollLeft+actions.clientWidth<actions.scrollWidth-2);}
+  function keyTool(key,label,icon=key){
+    const button=tool(group,label,icon);delete button.dataset.dockGroup;button.dataset.dockKey=key;button.setAttribute('aria-pressed',String(document.body.dataset.dockKey===key));button.onclick=()=>chooseKey(key);return button;
+  }
   function tool(key,label,icon=key){
-    const button=document.createElement('button');button.type='button';button.dataset.dockGroup=key;button.innerHTML='<span class="dock-tool-icon">'+dockIcon(icon)+'</span><span>'+label+'</span>';button.setAttribute('aria-label',label+'を調整');button.setAttribute('aria-pressed',String(group===key));
+    const button=document.createElement('button');button.type='button';button.dataset.dockGroup=key;button.innerHTML='<span class="dock-tool-icon">'+dockIcon(icon)+'</span><span>'+label+'</span>';button.setAttribute('aria-label',label+'を調整');button.setAttribute('aria-pressed',String(group===key&&!document.body.classList.contains('mobile-dock-collapsed')));
     button.onclick=()=>{
       if(key==='transition'){
         const launch=[...controls.querySelectorAll('button')].find(node=>node.textContent==='次のクリップへの切り替え効果');
@@ -57,48 +81,77 @@ export function installMobileDock({controls,context,media}){
   }
   context.querySelector('#mobileDockBack').onclick=()=>{
     focus=null;
+    endCompare();if(controls.contains(document.activeElement))document.activeElement.blur();
     if(controls.dataset.mode==='transition')controls.querySelector('button.transition-return')?.click();
-    else choose(defaults[controls.dataset.kind]||'volume');
+    else {group=defaults[controls.dataset.kind]||'volume';document.body.classList.add('mobile-dock-collapsed');arrange();}
   };
-  context.querySelector('#mobileDockDone').onclick=()=>{focus=null;document.body.classList.add('mobile-dock-collapsed');};
-  document.addEventListener('click',event=>{if(media.matches&&event.target.closest('.timeline-clip'))document.body.classList.remove('mobile-dock-collapsed');},true);
+  context.querySelector('#mobileDockDone').onclick=()=>{endCompare();focus=null;if(controls.contains(document.activeElement))document.activeElement.blur();if(controls.dataset.mode==='transition')controls.querySelector('button.transition-return')?.click();document.body.classList.add('mobile-dock-collapsed');arrange();};
   function showField(key){const field=nativeField(key);if(field)field.dataset.dockVisible='true';}
   function resetControl(key){
     const field=nativeField(key);if(!field||field.querySelector('.dock-field-reset'))return;
     const button=document.createElement('button');button.type='button';button.className='dock-field-reset';button.textContent='リセット';button.setAttribute('aria-label',({'brightness':'明るさ','contrast':'コントラスト','saturation':'彩度'})[key]+'をリセット');button.disabled=!!nativeInput(key)?.disabled;
     button.onclick=()=>{const input=nativeInput(key);if(!input||input.disabled)return;input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));};field.append(button);
   }
+  function projectVisibleFields(){
+    // Native <details> content has its own layout box. Project the real active
+    // controls into the dock, restoring their anchors on desktop or tool changes.
+    for(const node of controls.querySelectorAll('[data-dock-visible=true]')){
+      if(node.parentElement===controls||node.closest('[data-dock-visible=false]'))continue;
+      const anchor=document.createComment('desktop field');node.before(anchor);controls.append(node);movedFields.push({node,anchor});
+    }
+  }
+  function syncTrimActions(){for(const button of controls.querySelectorAll('[data-native-action]'))button.disabled=document.getElementById(button.dataset.nativeAction)?.disabled??true;}
+  function addQuickTrim(){
+    const row=document.createElement('div');row.className='dock-quick-trim-actions dock-generated';
+    for(const [id,label]of [['trimStartBtn','ここから使う'],['trimEndBtn','ここまで使う']]){
+      const button=document.createElement('button');button.type='button';button.dataset.nativeAction=id;button.textContent=label;button.setAttribute('aria-label',id==='trimStartBtn'?'再生位置より前を切り落とす':'再生位置より後を切り落とす');button.onclick=()=>document.getElementById(id)?.click();row.append(button);
+    }controls.append(row);syncTrimActions();
+  }
   function arrange(){
     observer.disconnect();
     try{
-      if(movedApplyAll){if(movedApplyAll.anchor.isConnected){movedApplyAll.anchor.after(movedApplyAll.button);movedApplyAll.button.textContent='すべての切れ目に適用';movedApplyAll.button.classList.remove('mobile-context-apply-all');}else movedApplyAll.button.remove();movedApplyAll=null;}
+      if(actions.dataset.rowKey)rowScroll.set(actions.dataset.rowKey,actions.scrollLeft);
+      for(const {node,anchor}of movedFields){if(anchor.isConnected){anchor.after(node);anchor.remove();}else node.remove();}movedFields=[];
+      controls.querySelectorAll('.dock-generated').forEach(node=>node.remove());
+      if(movedApplyAll){if(movedApplyAll.anchor.isConnected){movedApplyAll.anchor.after(movedApplyAll.button);movedApplyAll.anchor.remove();movedApplyAll.button.textContent='すべての切れ目に適用';movedApplyAll.button.classList.remove('mobile-context-apply-all');}else movedApplyAll.button.remove();movedApplyAll=null;}
       document.body.classList.toggle('mobile-reference',media.matches);
       if(!media.matches){
-        context.hidden=true;document.body.classList.remove('mobile-dock-collapsed');delete document.body.dataset.dockGroup;
+        endCompare();context.hidden=true;document.body.classList.remove('mobile-dock-collapsed');delete document.body.dataset.dockGroup;delete document.body.dataset.dockKey;delete document.body.dataset.dockKind;
         controls.querySelectorAll('[data-dock-visible]').forEach(node=>delete node.dataset.dockVisible);
         controls.querySelectorAll('.dock-field-reset').forEach(node=>node.remove());
         controls.querySelectorAll('.advanced-controls').forEach(node=>{if(detailsOpen.has(node))node.open=detailsOpen.get(node);});return;
       }
       const kind=controls.dataset.kind,identity=controls.dataset.itemId||'',transition=controls.dataset.mode==='transition';
       const available=!!groups[kind]&&!controls.querySelector('.empty-inspector');context.hidden=!available;
-      if(!available){group='';delete document.body.dataset.dockGroup;lastIdentity=identity;lastKind=kind;return;}
-      if(identity!==lastIdentity)document.body.classList.remove('mobile-dock-collapsed');
+      if(!available){endCompare();group='';delete document.body.dataset.dockGroup;delete document.body.dataset.dockKey;delete document.body.dataset.dockKind;lastIdentity=identity;lastKind='';return;}
+      if(identity!==lastIdentity){endCompare();if(kind!==lastKind)document.body.classList.toggle('mobile-dock-collapsed',kind!=='texts');}
       lastIdentity=identity;
-      if(transition)group='transition';
+      if(transition){group='transition';document.body.classList.remove('mobile-dock-collapsed');}
       else if(kind!==lastKind||group==='transition'||!(groups[kind].some(([key])=>key===group)))group=remembered.get(kind)||defaults[kind];
       lastKind=kind;
-      document.body.dataset.dockGroup=group;
+      const collapsed=document.body.classList.contains('mobile-dock-collapsed');
+      const defaultsByGroup={fit:kind==='texts'?'position':'fit',style:'looks',fade:kind==='texts'?'fade':'fadeIn',timing:'start'};
+      const key=group==='color'?colorKey:subKeys.get(kind+':'+group)||defaultsByGroup[group]||group;
+      document.body.dataset.dockGroup=group;document.body.dataset.dockKey=key;document.body.dataset.dockKind=kind;
+      if(!['color','filters'].includes(group)||collapsed)endCompare();compare.hidden=collapsed||!['color','filters'].includes(group);compare.disabled=!!nativeInput('brightness')?.disabled;
       name.textContent=transition?'トランジション':group==='color'?'映像を調整':group==='filters'?'フィルター':controls.querySelector('.inspector-heading')?.textContent||'素材を編集';
-      actions.hidden=transition;actions.classList.toggle('mobile-color-choices',group==='color'||group==='filters');
-      const previousActions=actions.scrollLeft;
-      if(group==='color'||group==='filters'){
+      actions.hidden=!collapsed&&(transition||group==='details');actions.classList.toggle('mobile-color-choices',!collapsed&&(group==='color'||group==='filters'));
+      const subtools=!collapsed&&(group==='color'||group==='filters'||group==='fit'||group==='fade'||group==='style'&&kind==='texts'||group==='timing'&&kind==='music');
+      actions.classList.toggle('mobile-subtools',subtools);
+      let rowKey='main:'+kind;
+      if(!collapsed&&(group==='color'||group==='filters')){
+        rowKey='color:'+kind;
         actions.replaceChildren(...[['brightness','明るさ','color'],['contrast','コントラスト','contrast'],['saturation','彩度','saturation']].map(([key,label,icon])=>{
-          const button=tool('color',label,icon);delete button.dataset.dockGroup;button.dataset.colorKey=key;button.setAttribute('aria-pressed',String(group==='color'&&colorKey===key));button.onclick=()=>{colorKey=key;choose('color');};return button;
+          const button=tool('color',label,icon);delete button.dataset.dockGroup;button.dataset.colorKey=key;button.dataset.dockKey=key;button.setAttribute('aria-pressed',String(group==='color'&&colorKey===key));button.onclick=()=>{colorKey=key;choose('color');};return button;
         }),tool('filters','フィルター'));
-      }else actions.replaceChildren(...groups[kind].map(([key,label])=>tool(key,label)));
-      actions.scrollLeft=previousActions;
+      }else if(subtools){
+        rowKey=kind+':'+group;
+        const choices=group==='fit'?(kind==='texts'?[['position','配置','fit'],['size','大きさ','text']]:[['fit','収め方','fit'],['zoom','拡大','zoom'],['rotation','回転','rotation'],['flipX','反転','flipX']]):group==='fade'?(kind==='texts'?[['fade','フェード','fade']]:[['fadeIn','入り','fade'],['fadeOut','終わり','fade']]):group==='style'?[['looks','スタイル','style'],['size','大きさ','text'],['color','文字色','color'],['background','背景','background']]:[['start','配置時刻','timing'],['range','使用範囲','transition']];
+        actions.replaceChildren(...choices.map(([value,label,icon])=>keyTool(value,label,icon)),...(group==='style'?[tool('timing','長さ')]:[]));
+      }else actions.replaceChildren(...groups[kind].map(([value,label])=>tool(value,label)));
+      actions.dataset.rowKey=rowKey;actions.scrollLeft=rowScroll.get(rowKey)||0;requestAnimationFrame(updateRowEdges);
       controls.querySelectorAll('.field,.quick-presets,.finishing-presets,.transition-presets,.inspector-heading,.inspector-section-title,.inspector-note,.panel-summary,.button').forEach(node=>node.dataset.dockVisible='false');
-      controls.querySelectorAll('.advanced-controls').forEach(node=>{if(!detailsOpen.has(node))detailsOpen.set(node,node.open);node.open=true;});
+      controls.querySelectorAll('.advanced-controls').forEach(node=>{if(!detailsOpen.has(node))detailsOpen.set(node,node.open);});
       if(transition){
         controls.querySelector('.transition-presets').dataset.dockVisible='true';showField('transitionDuration');
         const button=controls.querySelector('#applyAllTransitions'),anchor=document.createComment('transition apply all');button.before(anchor);button.dataset.dockVisible='true';button.textContent='すべてに適用';button.classList.add('mobile-context-apply-all');context.querySelector('#mobileDockDone').before(button);movedApplyAll={button,anchor};
@@ -106,19 +159,20 @@ export function installMobileDock({controls,context,media}){
       else if(group==='speed'){showField('speed');}
       else if(group==='color'){showField(colorKey);resetControl(colorKey);}
       else if(group==='filters'){const presets=controls.querySelector('[data-preset-group=color]');if(presets)presets.dataset.dockVisible='true';}
-      else if(group==='fit'){
-        (kind==='texts'?['position','size']:['fit','zoom']).forEach(showField);
-      }else if(group==='timing'){
-        (kind==='texts'?['start','end']:kind==='music'?['start','in','out']:['in','out']).forEach(showField);
+      else if(group==='fit')showField(key);
+      else if(group==='timing'){
+        (kind==='texts'?['start','end']:kind==='music'?(key==='range'?['in','out']:['start']):['in','out']).forEach(showField);
       }else if(group==='fade'){
-        (kind==='texts'?['fade']:['fadeIn','fadeOut']).forEach(showField);
+        showField(key);
       }else if(group==='text')showField('text');
       else if(group==='style'){
-        const presets=controls.querySelector('.finishing-presets');if(presets)presets.dataset.dockVisible='true';
-        if(kind==='texts')['size','color','background'].forEach(showField);
+        if(kind==='texts'&&key!=='looks')showField(key);
+        else {const presets=controls.querySelector('.finishing-presets');if(presets)presets.dataset.dockVisible='true';}
       }else if(group==='details'){
         controls.querySelectorAll('.field,.quick-presets,.finishing-presets,.inspector-note').forEach(node=>node.dataset.dockVisible='true');
       }
+      projectVisibleFields();if(group==='timing'&&kind==='clips')addQuickTrim();
+      const view=kind+':'+group+':'+key;if(view!==lastView)controls.scrollTop=0;lastView=view;
       // Preserve keyboard/text focus on an edit refresh, never focus on selection.
       if(focus&&!focus.input.isConnected&&focus.identity===identity&&!document.body.classList.contains('mobile-dock-collapsed')){
         const input=nativeInput(focus.key);
@@ -129,5 +183,6 @@ export function installMobileDock({controls,context,media}){
     }finally{observer.observe(controls,{childList:true});}
   }
   const observer=new MutationObserver(arrange);media.addEventListener('change',arrange);arrange();
+  const trimObserver=new MutationObserver(syncTrimActions);for(const id of ['trimStartBtn','trimEndBtn']){const button=document.getElementById(id);if(button)trimObserver.observe(button,{attributes:true,attributeFilter:['disabled']});}
   return {arrange};
 }

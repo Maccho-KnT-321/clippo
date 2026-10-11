@@ -55,6 +55,7 @@ try {
   // participate in the normal single-step undo/redo history.
   await page.locator('.text-clip').first().tap();
   await page.locator('.mobile-context-actions [data-dock-group=style]').tap();
+  await page.locator('.mobile-subtools [data-dock-key=looks]').tap();
   for (const look of textLooks) {
     await page.locator(`#inspector .finishing-presets[data-finishing=text] button[data-look=${look.id}]`).click();
     const current = (await savedProject(page)).texts[0];

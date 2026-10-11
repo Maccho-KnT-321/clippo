@@ -35,7 +35,7 @@ try{
     await stopped;stream.getTracks().forEach(track=>track.stop());return [...new Uint8Array(await new Blob(chunks,{type:recorder.mimeType}).arrayBuffer())];
   });
   await page.locator('#editorMediaInput').setInputFiles({name:'live-volume.webm',mimeType:'video/webm',buffer:Buffer.from(fixture)});
-  await page.locator('.timeline-clip').waitFor();await page.locator('#playBtn').tap();await assertGain(page,'clip:lane:0',1);
+  await page.locator('.timeline-clip').waitFor();await page.locator('.mobile-context-actions [data-dock-group=volume]').tap();await page.locator('#playBtn').tap();await assertGain(page,'clip:lane:0',1);
   await page.locator('#inspector .field[data-key=volume] input').evaluate(input=>{
     input.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:1}));
     for(const value of [.6,1.4,1.8]){input.value=String(value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}
@@ -53,6 +53,7 @@ try{
   await page.close();
 
   const bgm=await browser.newPage({viewport:{width:390,height:744},isMobile:true,hasTouch:true});bgm.on('pageerror',error=>errors.push(error.message));await bgm.goto(url);await observeEngine(bgm);await importPreset(bgm);
+  await bgm.locator('.mobile-context-actions [data-dock-group=volume]').tap();
   await bgm.locator('#playBtn').tap();await assertGain(bgm,'music:lane:0',.35);
   const slider=bgm.locator('#inspector .field[data-key=volume] input');
   await slider.evaluate(input=>{

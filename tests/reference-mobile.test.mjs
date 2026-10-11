@@ -8,7 +8,7 @@ const url = process.env.CLIPPO_URL || 'http://127.0.0.1:4173';
 const group = (page, key) => page.locator(`.mobile-context-actions [data-dock-group=${key}]`);
 const field = (page, key) => page.locator(`#inspector .field[data-key=${key}] input`);
 async function chooseGroup(page, key) {
-  if (await page.locator('.mobile-color-choices').isVisible()) await page.locator('#mobileDockBack').tap();
+  if (!await group(page, key).isVisible()) await page.locator('#mobileDockBack').tap();
   await group(page, key).tap();
 }
 async function savedProject(page) {
@@ -46,7 +46,7 @@ try {
   await page.goto(url); await page.locator('#welcomeDemo').tap();
   const clips = page.locator('.track[data-kind=clips] .timeline-clip');
   await clips.nth(2).waitFor(); await clips.first().tap();
-  await group(page, 'volume').tap();
+  await chooseGroup(page, 'volume');
   assert(await page.locator('body').evaluate(element => element.classList.contains('mobile-reference')));
 
   // A large preview and an open native adjustment leave a usable timeline,
@@ -74,7 +74,7 @@ try {
   assert.equal(await page.locator('#quickExportQuality').inputValue(), '720');
 
   // Keep the original volume gesture, including one undo for multiple inputs.
-  await group(page, 'volume').tap();
+  await chooseGroup(page, 'volume');
   await field(page, 'volume').evaluate(input => {
     input.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, pointerId: 1}));
     for (const value of [.6, 1.4, 1.5]) {
@@ -83,15 +83,15 @@ try {
     input.dispatchEvent(new PointerEvent('pointerup', {bubbles: true, pointerId: 1}));
   });
   assert.equal((await savedProject(page)).clips[0].volume, 1.5);
-  await page.locator('#undoBtn').tap(); await clips.first().tap(); await group(page, 'volume').tap();
+  await page.locator('#undoBtn').tap(); await clips.first().tap(); await chooseGroup(page, 'volume');
   assert.equal((await savedProject(page)).clips[0].volume, 1);
-  await page.locator('#redoBtn').tap(); await clips.first().tap(); await group(page, 'volume').tap();
+  await page.locator('#redoBtn').tap(); await clips.first().tap(); await chooseGroup(page, 'volume');
   assert.equal(await field(page, 'volume').inputValue(), '1.5');
 
   // Color choices reveal one real slider. Input previews smoothly without
   // replacing the slider under the finger; release commits one history step.
-  await group(page, 'color').tap();
-  await page.locator('.mobile-color-choices [data-color-key=brightness]').tap();
+  await chooseGroup(page, 'color');
+  await page.locator('.mobile-subtools [data-dock-key=brightness]').tap();
   assert.equal(await page.locator('#inspector .field[data-dock-visible=true] input[type=range]').count(), 1);
   assert.equal(await field(page, 'brightness').getAttribute('type'), 'range');
   const originalPreview = await previewSample(page);
@@ -116,15 +116,15 @@ try {
   });
   assert.equal((await savedProject(page)).clips[0].brightness, 1.2);
   await page.locator('#undoBtn').tap(); await clips.first().tap(); await chooseGroup(page, 'color');
-  await page.locator('.mobile-color-choices [data-color-key=brightness]').tap();
+  await page.locator('.mobile-subtools [data-dock-key=brightness]').tap();
   assert.equal((await savedProject(page)).clips[0].brightness, 1);
   await page.locator('#redoBtn').tap(); await clips.first().tap(); await chooseGroup(page, 'color');
-  await page.locator('.mobile-color-choices [data-color-key=brightness]').tap();
+  await page.locator('.mobile-subtools [data-dock-key=brightness]').tap();
   assert.equal(await field(page, 'brightness').inputValue(), '1.2');
   await page.screenshot({path: 'test-results/reference-mobile-color.png'});
 
   // Selecting another clip retains the chosen subcategory and tracks' scroll.
-  await page.locator('.mobile-color-choices [data-color-key=contrast]').tap();
+  await page.locator('.mobile-subtools [data-dock-key=contrast]').tap();
   await page.locator('#timeline').evaluate(element => {element.scrollLeft = 130;});
   const beforeSelection = await workspace(page);
   const visibleClip = await clips.nth(1).evaluate(element => {
@@ -161,7 +161,7 @@ try {
   // every boundary is one undoable operation and keeps the final clip intact.
   await page.locator('#timeline').evaluate(element => {element.scrollLeft = 0;});
   await clips.first().tap(); await page.locator('#mobileDockBack').tap();
-  await group(page, 'transition').tap();
+  await chooseGroup(page, 'transition');
   await page.locator('#inspector .transition-presets [data-effect=dissolve]').tap();
   const duration = page.getByRole('slider', {name: '効果の長さ（秒）', exact: true});
   await duration.fill('0.8'); await duration.dispatchEvent('input'); await duration.dispatchEvent('change');
@@ -176,7 +176,7 @@ try {
   assert((await visibleDurationCaption.innerText()).includes('重なりは' + actualOverlap + '秒'));
   await page.locator('#undoBtn').tap();
   assert.deepEqual((await savedProject(page)).clips, singleTransition.clips, 'one undo restores the unclamped requested transition');
-  await clips.first().tap(); await group(page, 'transition').tap();
+  await clips.first().tap(); await chooseGroup(page, 'transition');
   assert.equal(await duration.inputValue(), '0.8');
   for (const [width, height] of [[320, 568], [390, 667]]) {
     await page.setViewportSize({width, height});
@@ -194,7 +194,7 @@ try {
   assert.deepEqual(allTransitions.clips.at(-1).transition, singleTransition.clips.at(-1).transition);
   await page.locator('#undoBtn').tap(); assert.deepEqual((await savedProject(page)).clips, singleTransition.clips);
   await page.locator('#redoBtn').tap(); assert.deepEqual((await savedProject(page)).clips, allTransitions.clips);
-  await clips.first().tap(); await group(page, 'transition').tap();
+  await clips.first().tap(); await chooseGroup(page, 'transition');
   await page.locator('#mobileDockBack').tap();
   assert.equal(await page.locator('#inspector .transition-presets').isVisible(), false);
 
@@ -202,7 +202,7 @@ try {
   await page.locator('#mobileDockDone').tap();
   assert(await page.locator('body').evaluate(element => element.classList.contains('mobile-dock-collapsed')));
   assert((await workspace(page)).timeline > openDock.timeline + 50);
-  await group(page, 'volume').tap();
+  await chooseGroup(page, 'volume');
   assert.equal(await field(page, 'volume').isVisible(), true);
   assert.equal(await page.locator('#mobileToolsDialog').isVisible(), false);
   await page.locator('#workspaceDivider').focus(); await page.keyboard.press('Home');
@@ -218,9 +218,9 @@ try {
   if (await advanced.evaluate(element => element.open)) await advanced.locator('summary').click();
   assert.equal(await advanced.evaluate(element => element.open), false);
   await page.setViewportSize({width: 390, height: 744});
-  await group(page, 'volume').tap();
+  await chooseGroup(page, 'volume');
   assert.equal(await field(page, 'volume').getAttribute('type'), 'range');
-  await group(page, 'color').tap(); await page.locator('.mobile-color-choices [data-color-key=brightness]').tap();
+  await chooseGroup(page, 'color'); await page.locator('.mobile-subtools [data-dock-key=brightness]').tap();
   await field(page, 'brightness').fill('1.4'); await field(page, 'brightness').dispatchEvent('change');
   assert.equal((await savedProject(page)).clips[0].brightness, 1.4);
   await page.setViewportSize({width: 1440, height: 1000});
@@ -234,7 +234,7 @@ try {
   await textInput.fill('Tabで次の操作へ'); await textInput.press('Tab');
   assert.equal((await savedProject(page)).texts.at(-1).text, 'Tabで次の操作へ');
   assert.equal(await textInput.evaluate(input => input === document.activeElement), false, 'Tab leaves text editing after the commit');
-  await group(page, 'timing').tap();
+  await chooseGroup(page, 'timing');
   const timingInput = page.getByLabel('表示開始（秒）', {exact: true});
   await timingInput.fill('0.1'); await timingInput.press('Tab');
   assert.equal((await savedProject(page)).texts.at(-1).start, .1);

@@ -7,10 +7,21 @@ export function insertionAt(clips, time) {
   return index < 0 ? clips.length : index;
 }
 
+function trimEntry(clips,id,time){
+  if(!Number.isFinite(time))return null;
+  const entries=layoutClips(clips),entry=entries.find(entry=>entry.clip.id===id);
+  if(!entry||time<=entry.start+.05||time>=entry.end-.05)return null;
+  if(entries.filter(c=>time>=c.start&&time<c.end).length>1)return null;
+  return entry;
+}
+
+// The UI and the actual trim share exactly the same safe region. This test
+// does not clone or mutate a project while the playback clock is updating.
+export function canTrimToPlayhead(clips,id,time){return !!trimEntry(clips,id,time);}
+
 export function trimToPlayhead(clips, id, time, side) {
-  const entry = layoutClips(clips).find(entry => entry.clip.id === id);
-  if (!entry || time <= entry.start + .05 || time >= entry.end - .05) return false;
-  if (layoutClips(clips).filter(c => time >= c.start && time < c.end).length > 1) return false;
+  const entry=trimEntry(clips,id,time);
+  if(!entry)return false;
   const clip = entry.clip, sourceTime = clip.in + (time - entry.start) * clip.speed;
   if (side === 'start') { clip.in = sourceTime; clip.fadeIn = 0; }
   else { clip.out = sourceTime; clip.fadeOut = 0; }

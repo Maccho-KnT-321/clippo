@@ -1,6 +1,6 @@
-import { EditorEngine, supportedFormats } from './engine.js?v=20261010-taskforce';
+import { EditorEngine, supportedFormats } from './engine.js?v=20261011-flow';
 import { clipDuration, layoutClips, projectDuration, transitionDuration } from './timeline.js';
-import { insertionAt, trimToPlayhead } from './editing.js';
+import { insertionAt, trimToPlayhead, canTrimToPlayhead } from './editing.js';
 import { musicStore, makePresetMusic, presetMusicInfo } from './music-library.js';
 import { templates } from './templates.js';
 import { planStoryEdit, storyRecipes } from './story-planner.js';
@@ -8,11 +8,12 @@ import { beatTracks, beatPattern, renderBeat } from './beat-maker.js';
 import { inspectLocalFile } from './import-media.js?v=20261004-duration';
 import { loadRecovery, saveRecovery } from './project-store.js';
 import { recoveryUI } from './recovery-ui.js';
-import { installMobileEditor } from './mobile-editor.js?v=20261010-reference';
+import { installMobileEditor } from './mobile-editor.js?v=20261011-flow';
 import { keepScreenAwake, playbackMessage } from './export-support.js';
 import { selectionKey, selectedEntries, toggleTrackSelection, removeSelected } from './selection.js';
 import { textLooks, soundMixes, applyTextLook, applySoundMix } from './finishing.js';
 import { reviewProject } from './project-review.js';
+import { colorLooks, matchesColorLook, colorLookFilter, matchesTextLook } from './looks.js';
 
 const $ = id => document.getElementById(id);
 window.addEventListener('DOMContentLoaded',installMobileEditor,{once:true});
@@ -25,8 +26,22 @@ let timelineScale=60, clipboard=null, transitionSelection=null, suppressClickUnt
 let revealedSelection=null;
 let multiSelect=false,selectionKeys=new Set();
 let snapping=true, advancedOpen=false, draggedAsset=null, dropDepth=0;
-let recoveryReady=false,recoveryPending=null,recoveryRevision=null,recoveryTimer,recoverySaving=false,recoveryFingerprint='',recoveryState='loading';
+let recoveryReady=false,recoveryPending=null,recoveryRevision=null,recoveryTimer,recoverySaving=false,recoveryFingerprint='',recoveryState='loading',recoveryError=null;
 const engine = new EditorEngine($('preview'), assets);
+function endColorComparison({redraw=true}={}){
+  const active=!!engine.previewColorBypassId||document.body.classList.contains('preview-comparing');
+  engine.previewColorBypassId=null;document.body.classList.remove('preview-comparing');
+  if(active){document.dispatchEvent(new Event('clippo:compare-ended'));if(redraw&&!busy&&!playing)renderPreview();}
+}
+document.addEventListener('clippo:colorcompare',event=>{
+  const detail=event.detail;if(!detail)return;
+  if(!detail.active){endColorComparison();detail.accepted=true;return;}
+  if(busy||engine.exporting||selected?.kind!=='clips'||!selection()||document.hidden)return;
+  engine.previewColorBypassId=selected.id;document.body.classList.add('preview-comparing');detail.accepted=true;
+  if(!playing)renderPreview();
+});
+window.addEventListener('blur',()=>endColorComparison());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)endColorComparison({redraw:false});});
 const recoveryView=recoveryUI();
 $('projectInput').accept='.clippo,.json,application/json';
 if(/iPhone|iPad|Android/i.test(navigator.userAgent)||navigator.maxTouchPoints>1)$('exportQuality').value='720';
@@ -44,6 +59,7 @@ function edit(fn) { if (busy) return; remember();fn(); time = Math.min(time, dur
 function selection() { if (!selected) return null; return project[selected.kind].find(item => item.id === selected.id); }
 function select(kind, id, event=null) {
   if(busy)return;
+  endColorComparison();
   if(multiSelect||event?.ctrlKey||event?.metaKey||event?.shiftKey){
     if(!multiSelect){multiSelect=true;selectionKeys.clear();if(selection())selectionKeys.add(selectionKey(selected.kind,selected.id));}
     const key=selectionKey(kind,id);if(selectionKeys.has(key))selectionKeys.delete(key);else selectionKeys.add(key);
@@ -59,11 +75,13 @@ function select(kind, id, event=null) {
 }
 function selectTrack(kind){
   if(busy||!project[kind].length)return;
+  endColorComparison();
   if(!multiSelect){multiSelect=true;selectionKeys.clear();}
   toggleTrackSelection(project,selectionKeys,kind);selected=null;transitionSelection=null;renderTimeline();renderInspector();
 }
 function toggleMultiSelect(){
   if(busy)return;
+  endColorComparison();
   multiSelect=!multiSelect;selectionKeys.clear();
   if(multiSelect&&selection())selectionKeys.add(selectionKey(selected.kind,selected.id));
   selected=null;transitionSelection=null;renderTimeline();renderInspector();
@@ -92,20 +110,35 @@ function refresh() {
   updateGuide();
   scheduleRecovery();
 }
+function restoreSyncedRecovery(fingerprint){
+  // An in-flight write may replace the old saved snapshot. Wait for it to
+  // finish before claiming that a quick edit-and-revert is already persisted.
+  if(recoverySaving||fingerprint!==recoveryFingerprint)return false;
+  clearTimeout(recoveryTimer);
+  if(recoveryError){recoveryState='error';recoveryView.setState('error','自動保存できません：'+recoveryError);}
+  else if(recoveryState==='pending'){recoveryState='saved';recoveryView.setState('saved','この端末に自動保存済み · 大切な作品は「保存」でバックアップ');}
+  return true;
+}
 function scheduleRecovery(){
   if(!recoveryReady||recoveryPending||busy)return;
   const fingerprint=JSON.stringify(project);
-  if(fingerprint===recoveryFingerprint||(!recoveryFingerprint&&!project.clips.length&&!project.music.length))return;
+  if(restoreSyncedRecovery(fingerprint))return;
+  if(!recoveryFingerprint&&!project.clips.length&&!project.music.length&&!recoverySaving){
+    clearTimeout(recoveryTimer);
+    if(recoveryError){recoveryState='error';recoveryView.setState('error','自動保存できません：'+recoveryError);}
+    else if(recoveryState==='pending'){recoveryState='ready';recoveryView.setState('ready','素材を追加すると、この端末に自動保存します');}
+    return;
+  }
   clearTimeout(recoveryTimer);recoveryState='pending';recoveryView.setState('pending','変更を自動保存します…');
   recoveryTimer=setTimeout(flushRecovery,700);
 }
 async function flushRecovery(){
   if(!recoveryReady||recoveryPending||recoverySaving)return;
   if(busy){recoveryTimer=setTimeout(flushRecovery,700);return;}
-  const snapshot=clone(project),fingerprint=JSON.stringify(snapshot);if(fingerprint===recoveryFingerprint)return;
+  const snapshot=clone(project),fingerprint=JSON.stringify(snapshot);if(restoreSyncedRecovery(fingerprint))return;
   recoverySaving=true;recoveryState='saving';recoveryView.setState('saving','素材と編集内容をこの端末に保存中…');
-  try{const saved=await saveRecovery(snapshot,assets,recoveryRevision);recoveryRevision=saved.revision;recoveryFingerprint=fingerprint;recoveryState='saved';recoveryView.setState('saved','この端末に自動保存済み · 大切な作品は「保存」でバックアップ');}
-  catch(error){recoveryState='error';recoveryView.setState('error','自動保存できません：'+error.message);}
+  try{const saved=await saveRecovery(snapshot,assets,recoveryRevision);recoveryRevision=saved.revision;recoveryFingerprint=fingerprint;recoveryError=null;recoveryState='saved';recoveryView.setState('saved','この端末に自動保存済み · 大切な作品は「保存」でバックアップ');}
+  catch(error){recoveryError=error.message;recoveryState='error';recoveryView.setState('error','自動保存できません：'+recoveryError);}
   finally{recoverySaving=false;if(recoveryState==='saved')scheduleRecovery();}
 }
 async function initializeRecovery(){
@@ -127,14 +160,14 @@ $('restoreRecoveryBtn').onclick=async()=>{
     const saved=recoveryPending;if(saved.version!==1)throw new Error('保存形式に対応していません');
     for(const [index,entry]of saved.assets.entries()){$('recoveryDescription').textContent='素材を復元中 '+(index+1)+' / '+saved.assets.length+'：'+entry.file.name;const asset=await inspectFile(entry.file);asset.id=entry.id;loaded.push(asset);}
     const available=new Set(loaded.map(a=>a.id));if([...saved.project.clips,...saved.project.music].some(item=>!available.has(item.assetId)))throw new Error('保存された素材が不足しています');
-    remember();for(const asset of loaded)assets.set(asset.id,asset);project=clone(saved.project);selected=null;time=0;recoveryFingerprint=JSON.stringify(project);recoveryPending=null;recoveryView.notice.hidden=true;recoveryState='saved';recoveryView.setState('saved','前回の編集と素材を復元しました');toast('前回の編集の続きから再開できます');
+    remember();for(const asset of loaded)assets.set(asset.id,asset);project=clone(saved.project);selected=null;time=0;recoveryFingerprint=JSON.stringify(project);recoveryError=null;recoveryPending=null;recoveryView.notice.hidden=true;recoveryState='saved';recoveryView.setState('saved','前回の編集と素材を復元しました');toast('前回の編集の続きから再開できます');
   }catch(error){for(const asset of loaded)URL.revokeObjectURL(asset.url);recoveryView.setState('error','復元できません：'+error.message+'。前回の保存は残しています');}
   finally{busy=false;refresh();}
 };
 $('startFreshBtn').onclick=()=>{
   if(busy||!recoveryPending)return;
   if(!confirm('新しい編集を自動保存すると、前回の自動保存を置き換えます。よろしいですか？'))return;
-  recoveryPending=null;recoveryView.notice.hidden=true;recoveryFingerprint='';recoveryView.setState('ready','新しい編集をこの端末に自動保存します');scheduleRecovery();
+  recoveryPending=null;recoveryView.notice.hidden=true;recoveryFingerprint='';recoveryError=null;recoveryView.setState('ready','新しい編集をこの端末に自動保存します');scheduleRecovery();
 };
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&recoveryState==='pending'){clearTimeout(recoveryTimer);flushRecovery();}});
 initializeRecovery();
@@ -275,7 +308,7 @@ function renderTimeline() {
   $('splitBtn').disabled=!project.clips.length||busy||multiSelect;$('moveLeftBtn').disabled=selected?.kind!=='clips'||busy||multiSelect;$('moveRightBtn').disabled=selected?.kind!=='clips'||busy||multiSelect;
   if($('pasteBtn'))$('pasteBtn').disabled=!clipboard||busy;if($('mergeBtn'))$('mergeBtn').disabled=selected?.kind!=='clips'||busy;
   if($('selectionName'))$('selectionName').textContent=has?(selected.kind==='texts'?selection().text:assets.get(selection().assetId)?.name):'クリップを選択して編集';
-  for(const id of ['trimStartBtn','trimEndBtn'])if($(id))$(id).disabled=selected?.kind!=='clips'||busy;
+  updateTrimAvailability();
 }
 function wireClipMove(button,item,kind,start,row,board){
   button.onpointerdown=e=>{
@@ -320,8 +353,13 @@ function wireClipMove(button,item,kind,start,row,board){
     button.addEventListener('pointermove',move);button.addEventListener('pointerup',end);button.addEventListener('pointercancel',end);
   };
 }
-function updateTime() { $('scrub').value = time; $('timeDisplay').textContent = fmt(time) + ' / ' + fmt(duration()); const head = document.querySelector('.playhead'); if (head) head.style.left = (72 + time * timelineScale) + 'px'; }
+function updateTrimAvailability(){
+  const allowed=!busy&&!multiSelect&&selected?.kind==='clips'&&canTrimToPlayhead(project.clips,selected.id,time);
+  for(const id of ['trimStartBtn','trimEndBtn'])if($(id)&&$(id).disabled===!!allowed)$(id).disabled=!allowed;
+}
+function updateTime() { $('scrub').value = time; $('timeDisplay').textContent = fmt(time) + ' / ' + fmt(duration()); const head = document.querySelector('.playhead'); if (head) head.style.left = (72 + time * timelineScale) + 'px'; updateTrimAvailability(); }
 function renderInspector() {
+  if(engine.previewColorBypassId&&(busy||selected?.kind!=='clips'||selected.id!==engine.previewColorBypassId||transitionSelection))endColorComparison();
   const target=$('inspector'),identity=(selected?.id||'')+':'+(transitionSelection||''),scroll=target.dataset.itemId===identity?target.scrollLeft:0;target.dataset.itemId=identity;
   const current=selection();target.dataset.kind=selected?.kind||'';target.dataset.mode=current&&transitionSelection===current.id?'transition':selected?.kind||'';
   try{
@@ -342,9 +380,11 @@ function renderInspector() {
     for (const key of ['min', 'max', 'step']) if (options[key] != null) input[key] = options[key];
     if (type === 'checkbox') input.checked = !!item[key]; else {const value=item[key]??options.default??'';input.value=typeof value==='number'?Number(value.toFixed(3)):value;}
     input.onchange = () => {
-      const value = type === 'checkbox' ? input.checked : type === 'number' || type === 'range' ? Number(input.value) : input.value;
+      const value = type === 'checkbox' ? input.checked : type === 'number' || type === 'range' ? input.value.trim()===''?NaN:Number(input.value) : input.value;
       if (typeof value === 'number' && (!Number.isFinite(value) || (options.min != null && value < options.min) || (options.max != null && value > options.max))) { toast('範囲内の数値を入力してください。'); renderInspector(); return; }
       if (key === 'in' && value >= item.out || key === 'out' && value <= item.in || key === 'end' && value <= item.start || key === 'start' && selected.kind === 'texts' && value >= item.end) { toast('終了は開始より後に設定してください。'); renderInspector(); return; }
+      const current=type==='checkbox'?!!item[key]:item[key]??options.default;
+      if(current===value&&(key!=='position'||item.x==null&&item.y==null))return;
       edit(() => {item[key] = value;if(key==='position'){delete item.x;delete item.y;}});
     };
     if(key==='volume'){
@@ -381,7 +421,7 @@ function renderInspector() {
     wrap.append(input); panel.append(wrap);
   };
   if (selected.kind === 'texts') {
-    finishingPresets(panel,'text',textLooks,look=>edit(()=>applyTextLook(item,look)));
+    finishingPresets(panel,'text',textLooks,look=>edit(()=>applyTextLook(item,look)),item);
     field('テキスト', 'text', 'textarea'); field('表示開始（秒）', 'start', 'number', {min:0,step:.1}); field('表示終了（秒）', 'end', 'number', {min:.1,step:.1});
     field('文字サイズ', 'size', 'number', {min:12,max:160,step:1}); field('文字色', 'color', 'color');
     field('配置', 'position', 'select', {choices:[['top','上'],['center','中央'],['bottom','下']]}); field('背景を表示', 'background', 'checkbox');field('文字のフェード（秒）','fade','number',{min:0,max:3,step:.1,default:0});const hint=document.createElement('p');hint.className='inspector-note';hint.textContent='選択中のテロップは、プレビュー上をドラッグして位置を変更できます。';panel.append(hint);
@@ -396,7 +436,7 @@ function renderInspector() {
       field('回転','rotation','select',{choices:[[0,'0°'],[90,'90°'],[180,'180°'],[270,'270°']],default:0});
       field('左右反転','flipX','checkbox');
       sectionTitle(panel,'カラー');
-      quickPresets(panel,[['標準',{brightness:1,contrast:1,saturation:1}],['鮮やか',{brightness:1.03,contrast:1.1,saturation:1.3}],['シネマ',{brightness:.95,contrast:1.2,saturation:.8}],['モノクロ',{brightness:1,contrast:1.1,saturation:0}]],values=>edit(()=>Object.assign(item,values)),'color');
+      colorPresets(panel,item,asset);
       field('明るさ（1 = 標準）', 'brightness', 'number', {min:.2,max:2,step:.1});
       field('コントラスト','contrast','range',{min:0,max:2,step:.05,default:1});
       field('彩度','saturation','range',{min:0,max:2,step:.05,default:1});
@@ -413,7 +453,7 @@ function renderInspector() {
   // Keep common controls visible; disclose precision controls without removing them.
   if(selected.kind==='clips'){
     const children=[...panel.children],start=children.findIndex(el=>el.classList.contains('inspector-section-title'));
-    if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>{if(innerWidth>580)advancedOpen=details.open;};panel.append(details);}
+    if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>{if(details.isConnected&&innerWidth>580)advancedOpen=details.open;};panel.append(details);}
   }
   }finally{if(innerWidth<=580)target.scrollLeft=scroll;}
 }
@@ -462,7 +502,7 @@ $('deleteBtn').onclick = () => {
 };
 function move(direction){if(selected?.kind!=='clips')return;const index=project.clips.findIndex(c=>c.id===selected.id),to=index+direction;if(to<0||to>=project.clips.length)return;edit(()=>{const [clip]=project.clips.splice(index,1);project.clips.splice(to,0,clip);});}
 $('moveLeftBtn').onclick=()=>move(-1);$('moveRightBtn').onclick=()=>move(1);
-$('addTextBtn').onclick=()=>{if(!duration()){toast('先に動画または写真を追加してください。');return;}edit(()=>{const start=Math.min(time,duration()-.1),item={id:uid(),text:'ここにテロップを入力',start,end:Math.min(start+3,duration()),size:42,color:'#ffffff',position:'bottom',background:true};project.texts.push(item);selected={kind:'texts',id:item.id};});if(innerWidth<=580)setPanel('settings');};
+$('addTextBtn').onclick=()=>{if(busy)return;if(!duration()){toast('先に動画または写真を追加してください。');return;}edit(()=>{const start=Math.min(time,duration()-.1),item={id:uid(),text:'ここにテロップを入力',start,end:Math.min(start+3,duration()),size:42,color:'#ffffff',position:'bottom',background:true};project.texts.push(item);selected={kind:'texts',id:item.id};});if(innerWidth<=580){setPanel('settings');document.dispatchEvent(new Event('clippo:newtext'));}};
 for(const button of document.querySelectorAll('[data-panel]')) button.onclick=()=>setPanel(button.dataset.panel);
 $('helpBtn').onclick=()=>$('helpDialog').showModal();$('closeHelpBtn').onclick=()=>$('helpDialog').close();
 const exportChecks=document.createElement('section');exportChecks.id='exportChecks';exportChecks.className='export-checks';exportChecks.setAttribute('aria-label','作品の配置チェック');$('exportDialog').querySelector('.dialog-description').after(exportChecks);
@@ -475,6 +515,7 @@ function renderExportChecks(){
   return result;
 }
 $('exportBtn').onclick=()=>{
+  endColorComparison({redraw:false});
   $('exportReview')?.pause();$('exportDialog').classList.remove('export-complete');
   stop(); const formats=supportedFormats();$('exportFormat').replaceChildren();
   for(const mime of formats){const option=document.createElement('option');option.value=mime;option.textContent=mime.startsWith('video/mp4')?'MP4 · H.264':'WebM · '+(mime.includes('vp9')?'VP9':'VP8');$('exportFormat').append(option);}
@@ -486,7 +527,7 @@ $('exportDialog').addEventListener('cancel',event=>{if(busy){event.preventDefaul
 $('exportDialog').addEventListener('close',()=>$('exportReview')?.pause());
 const exportMonitor=document.createElement('div');exportMonitor.id='exportMonitor';exportMonitor.hidden=true;exportMonitor.style.cssText='max-height:160px;overflow:hidden;margin:8px 0';$('exportProgress').before(exportMonitor);
 $('startExportBtn').onclick=async()=>{
-  if(busy)return;if(!renderExportChecks().ready){$('startExportBtn').disabled=true;return;}busy=true;stop();$('startExportBtn').disabled=true;$('closeExportBtn').disabled=true;$('exportResult').replaceChildren();exportController=new AbortController();
+  if(busy)return;if(!renderExportChecks().ready){$('startExportBtn').disabled=true;return;}endColorComparison({redraw:false});busy=true;stop();$('startExportBtn').disabled=true;$('closeExportBtn').disabled=true;$('exportResult').replaceChildren();exportController=new AbortController();
   const screenGuard=keepScreenAwake();$('exportProgress').value=0;$('exportMessage').textContent='書き出しの準備をしています…';
   // The actual recording surface must stay visible inside the modal top layer.
   const canvas=engine.canvas,anchor=document.createComment('preview canvas'),canvasStyle=canvas.getAttribute('style');canvas.before(anchor);exportMonitor.hidden=false;exportMonitor.append(canvas);canvas.style.cssText='display:block;width:100%;max-height:160px;object-fit:contain';
@@ -559,6 +600,17 @@ const zoom=document.createElement('label');zoom.className='timeline-zoom';zoom.i
 
 function sectionTitle(panel,title){const h=document.createElement('h4');h.className='inspector-section-title';h.dataset.section=title==='カラー'?'color':title==='フェード'?'fade':'';h.textContent=title;panel.append(h);}
 function quickPresets(panel,choices,action,group=''){const row=document.createElement('div');row.className='quick-presets';if(group)row.dataset.presetGroup=group;for(const [label,value]of choices){const b=document.createElement('button');b.textContent=label;b.onclick=()=>action(value);row.append(b);}panel.append(row);return row;}
+function colorPresets(panel,item,asset){
+  const row=document.createElement('div');row.className='quick-presets color-look-presets';row.dataset.presetGroup='color';
+  for(const look of colorLooks){
+    const button=document.createElement('button');button.type='button';button.className='color-look-card';button.dataset.colorLook=look.id;button.title=look.description;button.setAttribute('aria-label',look.name);button.setAttribute('aria-pressed',String(matchesColorLook(item,look)));button.disabled=busy;
+    const thumb=document.createElement('span');thumb.className='look-thumb';thumb.setAttribute('aria-hidden','true');
+    if(asset.thumb){const image=document.createElement('img');image.src=asset.thumb;image.alt='';image.draggable=false;image.style.filter=colorLookFilter(look);thumb.append(image);}else{thumb.classList.add('look-thumb-empty');thumb.textContent='◧';}
+    const name=document.createElement('span');name.className='look-name';name.textContent=look.name;button.append(thumb,name);
+    button.onclick=()=>{if(matchesColorLook(item,look))return;edit(()=>Object.assign(item,look.values));};row.append(button);
+  }
+  panel.append(row);
+}
 function bindInspectorRange(input,{min,max,canEdit,getValue,setValue,show=()=>{},onLive=()=>renderPreview()}){
   // Keep the native control mounted throughout a gesture, with one undo entry.
   let changed=false,pointerActive=false,keyActive=false,finishTimer;
@@ -589,11 +641,18 @@ function bindInspectorRange(input,{min,max,canEdit,getValue,setValue,show=()=>{}
   input.addEventListener('keyup',event=>{if(adjustmentKeys.includes(event.key)){keyActive=false;queueFinish();}});
   show();
 }
-function finishingPresets(panel,kind,presets,apply){
+function finishingPresets(panel,kind,presets,apply,item=null){
   const row=document.createElement('div');row.className='finishing-presets';row.dataset.finishing=kind;
-  const label=document.createElement('span');label.textContent=kind==='text'?'文字の見た目':'作品全体の音を仕上げる';row.append(label);
+  const label=document.createElement('span');label.textContent=kind==='text'?'文字の見た目':'作品全体の音';row.append(label);
   const buttons=document.createElement('div');
-  for(const preset of presets){const button=document.createElement('button');button.type='button';button.textContent=preset.name;button.dataset[kind==='text'?'look':'mix']=preset.id;button.title=preset.description;button.onclick=()=>apply(preset.id);buttons.append(button);}
+  for(const preset of presets){const button=document.createElement('button');button.type='button';button.dataset[kind==='text'?'look':'mix']=preset.id;button.title=preset.description;button.setAttribute('aria-label',preset.name);
+    if(kind==='text'){
+      const active=matchesTextLook(item,preset);button.setAttribute('aria-pressed',String(active));
+      const sample=document.createElement('span');sample.className='text-look-sample text-look-'+preset.id;sample.textContent='今日の思い出';sample.style.color=preset.color;sample.style.fontSize=preset.id==='headline'?'16px':'12px';sample.style.fontWeight='700';sample.setAttribute('aria-hidden','true');if(preset.background)sample.classList.add('has-background');
+      const name=document.createElement('span');name.className='look-name';name.textContent=preset.name;button.append(sample,name);button.onclick=()=>{if(!matchesTextLook(item,preset))apply(preset.id);};
+    }else{button.textContent=preset.name;button.onclick=()=>apply(preset.id);}
+    buttons.append(button);
+  }
   row.append(buttons);if(kind==='sound'){const note=document.createElement('small');note.textContent='音量と入口・出口を一括調整。長いBGMは作品に合わせて切ります。元に戻せます。';row.append(note);}panel.append(row);
 }
 function renderTransitionInspector(panel,item){
