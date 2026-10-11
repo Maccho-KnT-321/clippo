@@ -42,7 +42,7 @@ try {
  await page.locator('#demoBtn').click();await page.waitForFunction(()=>document.querySelectorAll('.timeline-clip').length>=4);
  await page.locator('#addTextBtn').click();await page.locator('.text-clip').waitFor();
  await page.getByLabel('テキスト',{exact:true}).fill('旅の記録');await page.getByLabel('テキスト',{exact:true}).press('Tab');
- await page.locator('#scrub').fill('0.4');await page.locator('#splitBtn').click();
+ await page.locator('.track').first().locator('.timeline-clip').first().click();await page.locator('#scrub').fill('0.4');await page.locator('#splitBtn').click();
  assert.equal(await page.locator('.track').first().locator('.timeline-clip').count(),5,'split creates a second segment');
  await page.locator('#undoBtn').click();assert.equal(await page.locator('.track').first().locator('.timeline-clip').count(),4);
  await page.locator('#redoBtn').click();assert.equal(await page.locator('.track').first().locator('.timeline-clip').count(),5);

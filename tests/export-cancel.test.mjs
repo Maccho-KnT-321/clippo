@@ -55,7 +55,7 @@ async function withHarness(run) {
   engine.streamDestination = { stream: { getAudioTracks: () => [] } };
   engine.play = async (_project, _time, onTime, onEnd) => { engine.playing = true; onTime(.1); onEnd(); };
   const project = { aspect: '16:9', clips: [{ id: 'clip', assetId: 'source', in: 0, out: 3, speed: 1 }], music: [], texts: [] };
-  const options = { mimeType: 'video/mp4' };
+  const options = { mimeType: 'video/mp4', mode: 'realtime' };
   try { await run({ engine, canvas, project, options, media, configurations, tracks }); }
   finally {
     engine.dispose();

@@ -1,4 +1,4 @@
-// Browser-native compositor. Exports run in real time and require a visible tab.
+// Browser-native compositor. Frame-accurate export is preferred when supported.
 import { layoutClips, musicLanes, projectDuration as duration } from './timeline.js';
 export function supportedFormats() {
   if (!globalThis.MediaRecorder) return [];
@@ -185,6 +185,10 @@ export class EditorEngine {
       if (!current()) { el.pause(); return; }
     }
     for (const [key, entry] of this.media) if (!active.has(key)) entry.el.pause?.();
+    this.paintFrame(project, time, visuals, visible, progress);
+  }
+  // Shared by preview and frame-clocked export; never starts media playback.
+  paintFrame(project, time, visuals, visible, progress) {
     const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
     ctx.save();
     try {
@@ -194,7 +198,7 @@ export class EditorEngine {
       const originalColor=!this.exporting&&this.previewColorBypassId===clip.id;
       const neutral=!(Number(clip.rotation)||0)&&!clip.flipX&&(clip.zoom??1)===1&&(originalColor||(clip.brightness??1)===1&&(clip.contrast??1)===1&&(clip.saturation??1)===1);
       if(neutral){
-        const vw=visual.videoWidth||visual.naturalWidth,vh=visual.videoHeight||visual.naturalHeight;
+        const vw=visual.videoWidth||visual.naturalWidth||visual.width,vh=visual.videoHeight||visual.naturalHeight||visual.height;
         if(!vw||!vh)throw new Error('映像フレームを読み込めません。');
         const scale=clip.fit==='cover'?Math.max(w/vw,h/vh):Math.min(w/vw,h/vh);
         ctx.globalAlpha=fade;ctx.drawImage(visual,(w-vw*scale)/2,(h-vh*scale)/2,vw*scale,vh*scale);ctx.globalAlpha=1;
@@ -236,7 +240,7 @@ export class EditorEngine {
     const w = this.canvas.width, h = this.canvas.height;
     if (layer.width !== w || layer.height !== h) { layer.width = w; layer.height = h; }
     const ctx = layer.getContext('2d');
-    const vw = visual.videoWidth || visual.naturalWidth, vh = visual.videoHeight || visual.naturalHeight;
+    const vw = visual.videoWidth || visual.naturalWidth || visual.width, vh = visual.videoHeight || visual.naturalHeight || visual.height;
     if (!vw || !vh) throw new Error('映像フレームを読み込めません。');
     ctx.save(); ctx.clearRect(0, 0, w, h);
     const rotation = ((Number(clip.rotation) || 0) % 360 + 360) % 360, sideways = rotation === 90 || rotation === 270;
@@ -291,7 +295,33 @@ export class EditorEngine {
     };
     await tick();
   }
-  async export(project, { height = 720, mimeType = supportedFormats()[0], onProgress = () => {}, onPrepare = () => {}, signal } = {}) {
+  async export(project, options = {}) {
+    const {mode='auto',onMode=()=>{},onPrepare=()=>{},signal}=options;
+    if(!['auto','reliable','realtime'].includes(mode))throw new Error('書き出し方式が不正です。');
+    if(mode==='realtime'){onMode({mode:'realtime'});return this.exportRealtime(project,options);}
+    if(this.exporting)throw new Error('書き出し中です。');
+    if(!project.clips.length||duration(project)<=0)throw new Error('タイムラインに素材を追加してください。');
+    if(signal?.aborted)throw cancelled();
+    this.exporting=true;this.pause();this.previewColorBypassId=null;
+    let plan;
+    try{
+      const {prepareReliableExport,renderReliableExport}=await import('./reliable-export.js');
+      plan=await prepareReliableExport(project,this.assets,options);
+      if(plan.supported){
+        onMode({mode:'reliable'});
+        await cancellable(this.renderQueue.catch(()=>{}),signal);
+        // Offline decoders replace, rather than add to, the paused preview's
+        // video/audio decoders. The next preview reopens its two reusable lanes.
+        for(const key of this.media.keys())this.release(key);
+        return await renderReliableExport(this,project,plan,options);
+      }
+      if(mode==='reliable')throw new Error('品質優先の書き出しは利用できません：'+plan.reason+'。「自動」または「互換方式」を選んでください。');
+    }finally{this.exporting=false;plan?.dispose?.();}
+    if(signal?.aborted)throw cancelled();
+    onMode({mode:'realtime',reason:plan.reason});onPrepare('互換方式を使います：'+plan.reason);
+    return this.exportRealtime(project,options);
+  }
+  async exportRealtime(project, { height = 720, mimeType = supportedFormats()[0], onProgress = () => {}, onPrepare = () => {}, signal } = {}) {
     if (this.exporting) throw new Error('書き出し中です。');
     if (!project.clips.length || duration(project) <= 0) throw new Error('タイムラインに素材を追加してください。');
     if (!mimeType || !globalThis.MediaRecorder || !this.canvas.captureStream) throw new Error('このブラウザでは書き出せません。最新のSafariまたはChromeをお試しください。');

@@ -1,0 +1,41 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {readProjectArchive} from '../project-archive.js';
+
+const browser=await chromium.launch({channel:'chrome',headless:true});
+try{
+  const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),errors=[];
+  page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+  await page.goto(process.env.CLIPPO_URL||'http://127.0.0.1:4173');await page.locator('#welcomeDemo').tap();
+  await page.locator('.track[data-kind=clips] .timeline-clip').nth(2).waitFor();
+  await page.locator('#scrub').fill('1');await page.locator('#addTextBtn').tap();
+  await page.getByLabel('テキスト',{exact:true}).fill('同じ画面で編集');await page.locator('#mobileDockDone').tap();
+  await page.locator('#scrub').fill('2');await page.locator('#splitBtn').tap();
+  assert.equal(await page.locator('.text-clip').count(),2);assert.equal(await page.locator('.track[data-kind=clips] .timeline-clip').count(),3,'caption split never edits underlying video');
+  await page.locator('#undoBtn').tap();assert.equal(await page.locator('.text-clip').count(),1);
+  await page.locator('#redoBtn').tap();assert.equal(await page.locator('.text-clip').count(),2);
+  await page.locator('#addMusicBtn').tap();await page.locator('#presetMusicList .music-row').first().getByRole('button',{name:'追加',exact:true}).tap();
+  await page.locator('.audio-clip').waitFor();await page.locator('#scrub').fill('3');await page.locator('#splitBtn').tap();
+  assert.equal(await page.locator('.audio-clip').count(),2);assert.equal(await page.locator('.track[data-kind=clips] .timeline-clip').count(),3);
+  const downloading=page.waitForEvent('download');await page.locator('#saveProjectBtn').tap();const download=await downloading;
+  await download.saveAs('test-results/personal-quality.clippo');const bytes=await readFile('test-results/personal-quality.clippo');
+  assert.equal(bytes.subarray(0,8).toString(),'CLIPPO3\n');
+  const data=await readProjectArchive(new Blob([bytes]));assert.equal(data.project.texts.length,2);assert.equal(data.project.music.length,2);assert.equal(data.assets.length,4);
+  assert.equal(data.project.music[0].out,data.project.music[1].in);assert.equal(data.project.music[1].start,3);
+  await page.locator('#projectInput').setInputFiles({name:'backup.clippo',mimeType:'application/octet-stream',buffer:bytes});
+  await page.waitForFunction(()=>document.getElementById('toast').textContent==='プロジェクトを開きました');
+  assert.equal(await page.locator('.text-clip').count(),2);assert.equal(await page.locator('.audio-clip').count(),2);
+  const before=await page.locator('.timeline-clip').evaluateAll(nodes=>nodes.map(node=>node.dataset.id));
+  await page.locator('#projectInput').setInputFiles({name:'damaged.clippo',mimeType:'application/octet-stream',buffer:bytes.subarray(0,bytes.length-100)});
+  await page.locator('#importReport').waitFor();assert.match(await page.locator('#importReportMessage').textContent(),/現在の編集は変更していません/);
+  assert.deepEqual(await page.locator('.timeline-clip').evaluateAll(nodes=>nodes.map(node=>node.dataset.id)),before);
+  await page.locator('#importReport button').tap();await page.locator('#exportBtn').tap();
+  assert.equal(await page.locator('#exportMode').inputValue(),'auto');await page.locator('#startExportBtn').tap();
+  await page.locator('#exportReview').waitFor({timeout:45000});assert.match(await page.locator('#exportMethodStatus').textContent(),/品質優先/);
+  await page.locator('#exportReview').evaluate(video=>video.play());await page.waitForFunction(()=>document.getElementById('exportReview').currentTime>.2);await page.locator('#exportReview').evaluate(video=>video.pause());
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'test-results/personal-quality-mobile.png',fullPage:true});
+  assert.deepEqual(errors,[]);
+  console.log('Personal-quality mobile: caption/music split, undo, binary backup/reopen, damaged-file preservation and frame-accurate completed-video playback passed.');
+}finally{await browser.close();}

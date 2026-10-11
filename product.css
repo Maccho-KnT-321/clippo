@@ -9,7 +9,7 @@
 #exportResult{display:flex;flex-wrap:wrap;gap:10px}
 #exportReview{width:100%;max-height:220px;background:#000;border-radius:10px}
 .export-summary{width:100%;font-size:12px;color:#bbc8ae;margin:0}
-#exportDialog.export-complete .dialog-description,#exportDialog.export-complete .field-grid,#exportDialog.export-complete .export-note,#exportDialog.export-complete #exportProgress,#exportDialog.export-complete>.dialog-actions{display:none}
+#exportDialog.export-complete .dialog-description,#exportDialog.export-complete .field-grid,#exportDialog.export-complete #exportModeField,#exportDialog.export-complete .export-note,#exportDialog.export-complete #exportProgress,#exportDialog.export-complete>.dialog-actions{display:none}
 #exportDialog.export-complete #exportResult a{margin:0;min-height:44px;flex:1}
 #exportDialog.export-complete #exportResult button{min-height:44px}
 #renameInput{display:block;width:100%;min-height:48px;margin:12px 0;font-size:16px}

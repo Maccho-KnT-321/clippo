@@ -1,5 +1,4 @@
 import { projectDuration } from './timeline.js';
-import { recoveryLimit } from './project-store.js';
 
 const number = value => (typeof value === 'number' || typeof value === 'string' && value.trim() !== '') && Number.isFinite(Number(value));
 const validRange = item => item && number(item.in) && number(item.out) && Number(item.in) >= 0 && Number(item.out) > Number(item.in);
@@ -48,7 +47,6 @@ export function reviewProject(project, assets = new Map()) {
   };
   for (const clip of clips) inspectSource(clip, 'clips');
   const playableMusic = music.filter(item => inspectSource(item, 'music'));
-  if (assetBytes > recoveryLimit) report('save_limit', 'warning', '素材の合計が150MBを超えています。この端末の自動保存・素材込みプロジェクト保存はできません。完成動画の書き出し自体はこの上限の対象ではありません。');
   const total = projectDuration({ clips: clips.filter(object) });
   for (const text of texts) {
     if (!object(text) || !String(text.text || '').trim()) continue;

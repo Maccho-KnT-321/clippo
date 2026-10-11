@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reviewProject } from '../project-review.js';
-import { recoveryLimit } from '../project-store.js';
 
 const source = (id, type = 'video', size = 1024) => [id, { type, url: `blob:${id}`, duration: 10, file: { size } }];
 const clip = (id = 'clip', assetId = 'video') => ({ id, assetId, in: 0, out: 10, speed: 1 });
@@ -54,16 +53,16 @@ test('invalid music ranges and starts are fatal, numeric project values remain c
   assert.equal(reviewProject(edit, assets()).ready, false);
 });
 
-test('150MB limit is inclusive, ignores unused shelf files, and only warns rather than blocking video export', () => {
-  const edit = project(), media = assets(); media.get('video').file.size = recoveryLimit;
-  media.get('a').file.size = recoveryLimit * 3;
+test('large projects are not rejected by a fixed backup cap and unused shelf files do not count', () => {
+  const bytes=800*1024*1024;
+  const edit = project(), media = assets(); media.get('video').file.size = bytes;
+  media.get('a').file.size = bytes * 3;
   assert.equal(reviewProject(edit, media).issues.length, 0);
-  edit.clips.push(clip('copy')); assert.equal(reviewProject(edit, media).assetBytes, recoveryLimit);
+  edit.clips.push(clip('copy')); assert.equal(reviewProject(edit, media).assetBytes, bytes);
   media.get('video').file.size++;
   const result = reviewProject(edit, media);
-  assert.equal(result.ready, true); assert.equal(result.assetBytes, recoveryLimit + 1);
-  assert.deepEqual(codes(result), ['save_limit']); assert.equal(result.issues[0].level, 'warning');
-  assert.match(result.issues[0].message, /書き出し自体はこの上限の対象ではありません/);
+  assert.equal(result.ready, true); assert.equal(result.assetBytes, bytes + 1);
+  assert.deepEqual(codes(result), []);
 });
 
 test('outside and momentary captions are grouped, using visible duration and actual dissolved project duration', () => {

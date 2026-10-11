@@ -24,12 +24,17 @@ try{
     try{await saveRecovery(before.project,assets,null);}catch(e){message=e.message;}
     return {message,same:(await loadRecovery()).revision===before.revision};
   });assert.match(conflict.message,/別のタブ/);assert(conflict.same);
-  const oversized=await page.evaluate(async()=>{
-    const {loadRecovery,saveRecovery,recoveryLimit}=await import('./project-store.js');const saved=await loadRecovery(),assets=new Map(saved.assets.map(a=>[a.id,{file:a.file}]));
-    assets.set(saved.project.clips[0].assetId,{file:{size:recoveryLimit+1}});let message='';
-    try{await saveRecovery(saved.project,assets,saved.revision);}catch(e){message=e.message;}
-    return {message,same:(await loadRecovery()).revision===saved.revision};
-  });assert.match(oversized.message,/150MB/);assert(oversized.same,'oversized save retains previous successful snapshot');
+  const quota=await page.evaluate(async()=>{
+    const {loadRecovery,saveRecovery}=await import('./project-store.js');const saved=await loadRecovery(),assets=new Map(saved.assets.map(a=>[a.id,{file:a.file}]));
+    const originalEstimate=navigator.storage.estimate;
+    navigator.storage.estimate=async()=>({quota:1024*1024,usage:1024*1024});
+    const file=new File([new Uint8Array(2*1024*1024)],'追加.mov',{type:'video/quicktime'});
+    assets.set('new-source',{file});let message='',code='';
+    const next={...saved.project,clips:[...saved.project.clips,{...saved.project.clips[0],id:'extra-clip',assetId:'new-source'}]};
+    try{await saveRecovery(next,assets,saved.revision);}catch(e){message=e.message;code=e.code;}
+    finally{navigator.storage.estimate=originalEstimate;}
+    return {message,code,same:(await loadRecovery()).revision===saved.revision};
+  });assert.match(quota.message,/空き容量.*前回の自動保存は残しています/);assert.equal(quota.code,'RECOVERY_QUOTA');assert(quota.same,'capacity failure retains previous successful snapshot');
   const other=await context.newPage();other.on('dialog',d=>d.accept());await other.goto('http://127.0.0.1:4173');await other.locator('#recoveryNotice').waitFor();
   await other.locator('#startFreshBtn').click();await other.locator('#welcomeDemo').click();await other.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='saved');
   await page.locator('#addTextBtn').tap();await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='error');

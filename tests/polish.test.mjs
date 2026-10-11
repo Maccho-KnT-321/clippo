@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
+import { readProjectArchive } from '../project-archive.js';
 
 // Tests actual decoded pixels, not just the presence of transition controls.
 // Stabilize pixel assertions independently of this machine's H.264 hardware driver.
@@ -42,7 +43,8 @@ try {
   await page.getByLabel('効果の長さ（秒）',{exact:true}).press('Tab');
   const download=page.waitForEvent('download');await page.locator('#saveProjectBtn').click();
   await (await download).saveAs('test-results/polish.clippo');
-  const packed=JSON.parse(await readFile('test-results/polish.clippo','utf8'));
+  const archive=await readProjectArchive(new Blob([await readFile('test-results/polish.clippo')]));
+  const packed={project:archive.project,assets:await Promise.all(archive.assets.map(async asset=>({id:asset.id,data:'data:'+asset.file.type+';base64,'+Buffer.from(await asset.file.arrayBuffer()).toString('base64')})))};
   const pixelResult=await page.evaluate(async({packed})=>{
     const {EditorEngine,supportedFormats}=await import('/engine.js');
     const assets=new Map(packed.assets.map(asset=>[asset.id,{id:asset.id,type:'image',url:asset.data,duration:4,width:320,height:180}]));

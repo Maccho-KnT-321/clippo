@@ -59,7 +59,7 @@ async function withHarness(run) {
         onEnd();
       };
     };
-    const options = { mimeType: 'video/mp4', onPrepare: message => { prepare.push(message); events.push('prepare'); }, onProgress: value => { progress.push(value); events.push('progress'); } };
+    const options = { mimeType: 'video/mp4', mode:'realtime', onPrepare: message => { prepare.push(message); events.push('prepare'); }, onProgress: value => { progress.push(value); events.push('progress'); } };
     await run({ engine, canvas, project, stopped, prepare, progress, events, simulate, options });
   } finally {
     for (const name of names) {
