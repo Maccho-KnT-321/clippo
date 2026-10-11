@@ -4,6 +4,7 @@ import {chromium} from 'playwright';
 
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--autoplay-policy=no-user-gesture-required']});
 const url=process.env.CLIPPO_URL||'http://127.0.0.1:4173';
+const progress=stage=>{if(process.env.CLIPPO_DEBUG)console.log('Mobile flow: '+stage);};
 const input=(page,key)=>page.locator(`#inspector .field[data-key=${key}] input,#inspector .field[data-key=${key}] select,#inspector .field[data-key=${key}] textarea`);
 const subtool=(page,key)=>page.locator(`.mobile-subtools [data-dock-key=${key}]`);
 async function chooseGroup(page,key){
@@ -12,7 +13,7 @@ async function chooseGroup(page,key){
   await button.tap();
 }
 async function savedProject(page){
-  await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='saved');
+  await page.waitForFunction(()=>document.getElementById('saveProjectBtn').dataset.recovery==='saved',null,{timeout:15000});
   return page.evaluate(async()=>{const {loadRecovery}=await import('./project-store.js');return (await loadRecovery()).project;});
 }
 const metrics=page=>page.evaluate(()=>{
@@ -46,8 +47,9 @@ async function waitForSample(page,sample,equal){
 
 try{
   const page=await browser.newPage({viewport:{width:390,height:744},isMobile:true,hasTouch:true}),errors=[];
+  page.setDefaultTimeout(30000);
   page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(url);await page.locator('#welcomeDemo').tap();
+  await page.goto(url);await page.locator('#welcomeDemo').tap();progress('loaded');
   const clips=page.locator('.track[data-kind=clips] .timeline-clip');await clips.nth(2).waitFor();await clips.first().tap();
   assert.equal(await page.locator('body').getAttribute('data-dock-kind'),'clips');
   assert(await page.locator('body').evaluate(body=>body.classList.contains('mobile-dock-collapsed')),'selecting a clip does not automatically open adjustments');
@@ -58,6 +60,7 @@ try{
   assert(await page.locator('body').evaluate(body=>body.classList.contains('mobile-dock-collapsed')),'a clip tap keeps the compact state; a tool tap expands it');
   assert.equal(await page.locator('#inspector').isVisible(),false);
 
+  progress('compact tools');
   // Each focused tool uses the real field without leaving a partly clipped
   // second field below a 53px window. Switching subtools is not a modal trip.
   await chooseGroup(page,'fit');
@@ -77,6 +80,7 @@ try{
   await page.locator('.dock-quick-trim-actions [data-native-action=trimStartBtn]').tap();assert.equal((await savedProject(page)).clips[0].in,1);
   await page.locator('#undoBtn').tap();assert.deepEqual((await savedProject(page)).clips,untrimmed.clips);await clips.first().tap();
 
+  progress('direct trim');
   // Precision scrolling is local to its category; ordinary tools start at
   // their first control. Main and nested horizontal menus remember separately.
   await chooseGroup(page,'details');await page.locator('#inspector').evaluate(node=>node.scrollTop=node.scrollHeight);
@@ -91,6 +95,7 @@ try{
   await chooseGroup(page,'fit');await subtool(page,'rotation').tap();await page.locator('#mobileDockBack').tap();
   assert.equal(await page.locator('.mobile-context-actions').evaluate(node=>node.scrollLeft),mainScroll);
 
+  progress('menu scroll');
   // Color cards show the user's actual asset, not a decorative landscape.
   await chooseGroup(page,'filters');
   const neutral=await previewSample(page);
@@ -99,7 +104,7 @@ try{
     assert(await card.locator('img').evaluate(image=>image.complete&&image.naturalWidth>0),'filter '+look+' previews the selected asset');
     await card.tap();assert.equal(await card.getAttribute('aria-pressed'),'true');
   }
-  await page.locator('.color-look-card[data-color-look=standard]').tap();await savedProject(page);await waitForSample(page,neutral,true);
+  await page.locator('.color-look-card[data-color-look=standard]').tap();await savedProject(page);await waitForSample(page,neutral,true);progress('color looks');
   await chooseGroup(page,'color');await subtool(page,'brightness').tap();await fieldsFit(page,['brightness']);
   await input(page,'brightness').fill('0.6');await input(page,'brightness').dispatchEvent('input');await input(page,'brightness').dispatchEvent('change');
   await waitForSample(page,neutral,false);const adjusted=await previewSample(page),edited=await savedProject(page);
@@ -130,6 +135,7 @@ try{
   await compare.dispatchEvent('pointerdown',{pointerId:9,button:0});assert.equal(await page.evaluate(()=>window.flowEngine.playing),true,'holding compare does not stop playback');
   await compare.dispatchEvent('pointerup',{pointerId:9});assert.equal(await page.evaluate(()=>window.flowEngine.playing),true);await page.locator('#playBtn').tap();
 
+  progress('color comparison');
   // Text style opens a single editable property at a time. The sound preset
   // explicitly states its project-wide scope instead of implying clip scope.
   await page.locator('#addTextBtn').tap();assert.equal(await page.locator('body').getAttribute('data-dock-kind'),'texts');
@@ -151,6 +157,7 @@ try{
   await chooseGroup(page,'style');assert.match(await page.locator('#inspector .finishing-presets>span').innerText(),/作品全体の音/);
   assert.equal(await page.locator('#inspector .finishing-presets>span').isVisible(),true);
 
+  progress('text and music tools');
   // Normal short-phone layouts retain editing space even for two-field
   // timing. Keyboard-focused editing uses its visible viewport separately.
   await clips.first().tap();await chooseGroup(page,'timing');
@@ -166,19 +173,22 @@ try{
   assert(typing.y>=0&&typing.y+typing.height<=430&&done.y>=0&&done.y+done.height<=430,'typing and Done stay inside the visible keyboard viewport');
   await input(page,'text').fill('その場で迷わず編集');await page.locator('#mobileDockDone').tap();await page.setViewportSize({width:390,height:744});
   await page.waitForFunction(()=>!document.body.classList.contains('mobile-keyboard'));assert.equal((await savedProject(page)).texts[0].text,'その場で迷わず編集');
+  progress('short phone and keyboard');
   await mkdir('test-results',{recursive:true});await page.screenshot({path:'test-results/flow-mobile.png'});
+  progress('screenshot');
   await page.setViewportSize({width:1440,height:1000});assert.equal(await page.locator('.workspace>.inspector-panel').count(),1);
   assert.equal(await page.locator('#mobileColorCompare').isVisible(),false);
   assert.equal(await page.locator('#inspector .dock-quick-trim-actions').count(),0,'mobile precision helpers do not remain in the desktop inspector');
   await clips.first().click();
   const disclosure=page.locator('#inspector .advanced-controls');
   if(!await disclosure.evaluate(node=>node.open))await disclosure.locator('summary').click();
+  progress('desktop open');
   await page.setViewportSize({width:390,height:744});await chooseGroup(page,'color');await subtool(page,'brightness').tap();
-  await input(page,'brightness').fill('1.1');await input(page,'brightness').dispatchEvent('change');await savedProject(page);
-  await page.setViewportSize({width:1440,height:1000});assert.equal(await disclosure.evaluate(node=>node.open),true,'an explicitly open desktop disclosure survives a real mobile edit');
+  await input(page,'brightness').fill('1.1');await input(page,'brightness').dispatchEvent('change');progress('first desktop-to-mobile color edit');await savedProject(page);
+  await page.setViewportSize({width:1440,height:1000});assert.equal(await disclosure.evaluate(node=>node.open),true,'an explicitly open desktop disclosure survives a real mobile edit');progress('desktop open restored');
   await disclosure.locator('summary').click();
   await page.setViewportSize({width:390,height:744});await chooseGroup(page,'color');await subtool(page,'brightness').tap();
-  await input(page,'brightness').fill('1.2');await input(page,'brightness').dispatchEvent('change');await savedProject(page);
+  await input(page,'brightness').fill('1.2');await input(page,'brightness').dispatchEvent('change');progress('second desktop-to-mobile color edit');await savedProject(page);
   await page.setViewportSize({width:1440,height:1000});assert.equal(await disclosure.evaluate(node=>node.open),false,'an explicitly closed desktop disclosure is not reopened by mobile refresh');
   assert.deepEqual(errors,[]);
   console.log('Mobile flow: compact idle, real focused fit/fade/text tools, whole-field precision, category scroll, source filter previews, reversible hold-to-compare without history or playback changes, global sound scope, short-phone fit, keyboard editing and desktop restoration passed.');

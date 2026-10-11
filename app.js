@@ -453,7 +453,15 @@ function renderInspector() {
   // Keep common controls visible; disclose precision controls without removing them.
   if(selected.kind==='clips'){
     const children=[...panel.children],start=children.findIndex(el=>el.classList.contains('inspector-section-title'));
-    if(start>=0){const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';details.append(summary);for(const node of children.slice(start))details.append(node);details.ontoggle=()=>{if(details.isConnected&&innerWidth>580)advancedOpen=details.open;};panel.append(details);}
+    if(start>=0){
+      const details=document.createElement('details');details.className='advanced-controls';details.open=advancedOpen;
+      const summary=document.createElement('summary');summary.textContent='もっとこだわる · 色とフェード';
+      // Native toggle is queued. Remember the user's click synchronously so
+      // a breakpoint change before that queued event cannot discard it.
+      summary.onclick=()=>{if(details.isConnected&&innerWidth>580)advancedOpen=!details.open;};
+      details.append(summary);for(const node of children.slice(start))details.append(node);
+      details.ontoggle=()=>{if(details.isConnected&&innerWidth>580)advancedOpen=details.open;};panel.append(details);
+    }
   }
   }finally{if(innerWidth<=580)target.scrollLeft=scroll;}
 }
